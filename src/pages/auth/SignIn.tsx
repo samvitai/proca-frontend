@@ -17,9 +17,9 @@ import { updateCachedUserProfile } from "@/lib/utils";
 // In production, use the environment variable or fallback to the production URL
 const API_BASE_URL = import.meta.env.DEV 
   ? '' 
-  : (import.meta.env.VITE_API_BASE_URL || 'https://procabackend.up.railway.app');
+  : (import.meta.env.VITE_API_BASE_URL || 'https://proca-backend-staging.up.railway.app');
 
-// Configure axios instance
+// Configure axios instance for unauthenticated requests (OTP)
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -189,9 +189,22 @@ const SignIn = () => {
               const errorMessages = responseData.errors.map(err => err.message).join(', ');
               return errorMessages;
             }
+            // Return the message from backend, which might say "email doesn't exist"
             return responseData.message || 'Bad request';
           }
-          return 'Invalid request';
+          // Check if it's a validation error response
+          if (isValidationErrorResponse(responseData)) {
+            const errorMessages = responseData.detail.map((err) => err.msg).join(', ');
+            return `Validation Error: ${errorMessages}`;
+          }
+          // Try to extract message from any response structure
+          if (responseData && typeof responseData === 'object') {
+            const message = (responseData as any).message || (responseData as any).error || (responseData as any).detail;
+            if (message) {
+              return typeof message === 'string' ? message : JSON.stringify(message);
+            }
+          }
+          return 'Invalid request. Please check your email and try again.';
           
         case 404:
           if (userType === 'client') {
@@ -234,18 +247,32 @@ const SignIn = () => {
   // API Functions
   const requestOTP = async (email: string, userType: UserType): Promise<RequestOTPResponse> => {
     try {
+      // Normalize email: trim whitespace and convert to lowercase
+      const normalizedEmail = email.trim().toLowerCase();
+      
       console.log('API Base URL:', API_BASE_URL);
-      console.log('Requesting OTP for email:', email, 'User type:', userType);
+      console.log('Original email:', email);
+      console.log('Normalized email:', normalizedEmail);
+      console.log('Requesting OTP for email:', normalizedEmail, 'User type:', userType);
       
       const requestData: RequestOTPRequest = { 
-        email,
+        email: normalizedEmail,
         user_type: userType 
       };
+      
+      console.log('Request data being sent:', requestData);
+      
       const response = await api.post<RequestOTPResponse>('/api/auth/request-otp', requestData);
       
       console.log('Request OTP Response:', response.data);
       return response.data;
     } catch (error: unknown) {
+      console.error('Error in requestOTP:', error);
+      if (isAxiosError(error)) {
+        console.error('Error response status:', error.response?.status);
+        console.error('Error response data:', error.response?.data);
+        console.error('Error response headers:', error.response?.headers);
+      }
       const errorMessage = handleApiError(error);
       throw new ApiError(errorMessage);
     }
@@ -253,10 +280,13 @@ const SignIn = () => {
 
   const verifyOTP = async (email: string, otp: string, userType: UserType): Promise<VerifyOTPResponse> => {
     try {
-      console.log('Verifying OTP for email:', email, 'OTP:', otp, 'User type:', userType);
+      // Normalize email: trim whitespace and convert to lowercase
+      const normalizedEmail = email.trim().toLowerCase();
+      
+      console.log('Verifying OTP for email:', normalizedEmail, 'OTP:', otp, 'User type:', userType);
       
       const requestData: VerifyOTPRequest = { 
-        email, 
+        email: normalizedEmail, 
         otp,
         user_type: userType
       };
@@ -267,7 +297,11 @@ const SignIn = () => {
       
       return response.data;
     } catch (error: unknown) {
-      console.log('Verify OTP Error:', error);
+      console.error('Verify OTP Error:', error);
+      if (isAxiosError(error)) {
+        console.error('Error response status:', error.response?.status);
+        console.error('Error response data:', error.response?.data);
+      }
       const errorMessage = handleApiError(error);
       throw new ApiError(errorMessage);
     }
@@ -310,17 +344,25 @@ const SignIn = () => {
   // Function to fetch and store user profile data
   const fetchAndStoreProfile = async (authToken: string, userId: string): Promise<void> => {
     try {
-      console.log('Fetching user profile for ID:', userId);
+      console.log('🔵 fetchAndStoreProfile called', { userId, hasToken: !!authToken, tokenLength: authToken?.length });
+      console.log('🔵 API_BASE_URL:', API_BASE_URL);
+      console.log('🔵 Full URL will be:', `${API_BASE_URL}/api/v1/users/users/${userId}`);
       
-      const response = await api.get(
-        `/api/v1/users/users/${userId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          }
+      // Create a temporary axios instance with the correct baseURL for this context
+      // Use the same baseURL configuration as the local api instance
+      const profileApi = axios.create({
+        baseURL: API_BASE_URL,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
         }
+      });
+      
+      console.log('🔵 Making API request to:', `/api/v1/users/users/${userId}`);
+      const response = await profileApi.get(
+        `/api/v1/users/users/${userId}`
       );
+      console.log('🔵 API response received:', response.status, response.data);
 
       // Handle different possible response structures
       let userData;
@@ -352,9 +394,15 @@ const SignIn = () => {
     setError(null);
     setSuccess(null);
     
+    // Normalize email: trim whitespace and convert to lowercase
+    const normalizedEmail = email.trim().toLowerCase();
+    
+    // Update email state with normalized value
+    setEmail(normalizedEmail);
+    
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       setError('Please enter a valid email address');
       toast({
         title: "Invalid Email",
@@ -367,13 +415,13 @@ const SignIn = () => {
     setLoading(true);
     
     try {
-      const response = await requestOTP(email, userType);
+      const response = await requestOTP(normalizedEmail, userType);
       
       if (response.success) {
-        setSuccess(`Verification code sent to ${email}`);
+        setSuccess(`Verification code sent to ${normalizedEmail}`);
         toast({
           title: "OTP Sent",
-          description: response.message || `Verification code sent to ${email}`,
+          description: response.message || `Verification code sent to ${normalizedEmail}`,
         });
         setStep('otp');
       } else {
@@ -416,8 +464,11 @@ const SignIn = () => {
 
     setLoading(true);
     
+    // Normalize email: trim whitespace and convert to lowercase
+    const normalizedEmail = email.trim().toLowerCase();
+    
     try {
-      const response = await verifyOTP(email, otp, userType);
+      const response = await verifyOTP(normalizedEmail, otp, userType);
       
       console.log('Full response object:', response);
       console.log('Response success:', response.success);
@@ -464,7 +515,21 @@ const SignIn = () => {
         
         // Store auth info securely - Updated to match your API response
         console.log("Auth token", access_token);
+        
+        // Validate token before storing
+        if (!access_token || typeof access_token !== 'string' || access_token.trim() === '') {
+          throw new Error('Invalid access token received from server');
+        }
+        
         localStorage.setItem('authToken', access_token);
+        
+        // Verify token was stored correctly
+        const storedToken = localStorage.getItem('authToken');
+        if (storedToken !== access_token) {
+          console.error('Token storage verification failed');
+          throw new Error('Failed to store authentication token');
+        }
+        console.log('Token stored and verified successfully');
         localStorage.setItem('userEmail', user.email);
         localStorage.setItem('userRole', userRole);
         localStorage.setItem('userId', user.id);
@@ -511,8 +576,17 @@ const SignIn = () => {
           localStorage.setItem('refreshToken', response.data.refresh_token);
         }
         
+        // Ensure token is stored and available before making authenticated requests
+        // Small delay to ensure localStorage is fully updated
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         // Fetch and store user profile data immediately after successful authentication
-        await fetchAndStoreProfile(access_token, user.id);
+        // This is non-blocking - errors are caught and won't prevent sign-in
+        console.log('About to fetch user profile...', { userId: user.id, hasToken: !!access_token });
+        fetchAndStoreProfile(access_token, user.id).catch(err => {
+          console.error('Profile fetch failed (non-critical):', err);
+          // Don't block sign-in if profile fetch fails
+        });
         
         // Redirect based on role
         setTimeout(() => {
@@ -524,6 +598,8 @@ const SignIn = () => {
             navigate('/dashboard/employee/tasks');
           } else if (userRole === 'superadmin') {
             navigate('/dashboard/superadmin/users');
+          } else if (userRole === 'client') {
+            navigate('/dashboard/client/tasks');
           } else {
             navigate(`/dashboard/${userRole}`);
           }
@@ -572,8 +648,11 @@ const SignIn = () => {
     setError(null);
     setSuccess(null);
     
+    // Normalize email: trim whitespace and convert to lowercase
+    const normalizedEmail = email.trim().toLowerCase();
+    
     try {
-      const response = await requestOTP(email, userType);
+      const response = await requestOTP(normalizedEmail, userType);
       
       if (response.success) {
         setSuccess('New verification code sent');

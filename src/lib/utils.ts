@@ -8,8 +8,11 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // API Configuration using Vite environment variables
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "https://procabackend.up.railway.app";
+// In development, use empty baseURL to let Vite proxy handle requests
+// In production, use the environment variable or fallback to the production URL
+const API_BASE_URL = import.meta.env.DEV 
+  ? '' 
+  : (import.meta.env.VITE_API_BASE_URL || "https://proca-backend-staging.up.railway.app");
 
 // Configure axios instance without static token
 export const api = axios.create({
@@ -30,8 +33,19 @@ api.interceptors.request.use(
                      sessionStorage.getItem('token') ||
                      sessionStorage.getItem('auth_token');
 
+    console.log('🔵 API Request Interceptor:', {
+      url: config.url,
+      method: config.method,
+      hasToken: !!authToken,
+      tokenLength: authToken?.length,
+      baseURL: config.baseURL
+    });
+
     if (authToken) {
       config.headers.Authorization = `Bearer ${authToken}`;
+      console.log('🔵 Token added to request headers');
+    } else {
+      console.warn('⚠️ No auth token found in localStorage/sessionStorage');
     }
 
     // Add organization context if available
@@ -58,14 +72,21 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      // Don't redirect if we're already on the sign-in page
+      const currentPath = window.location.pathname;
+      if (currentPath === '/auth/signin' || currentPath.startsWith('/auth/')) {
+        // Already on auth page, just reject the error
+        return Promise.reject(error);
+      }
+      
       console.error('Authentication required. Please log in again.');
       // Clear tokens and redirect to login
       localStorage.removeItem('authToken');
       localStorage.removeItem('token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('access_token');
-      // You might want to redirect to login page here
-      window.location.href = '/login';
+      // Redirect to login page
+      window.location.href = '/auth/signin';
     }
     return Promise.reject(error);
   }

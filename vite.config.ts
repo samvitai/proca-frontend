@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     proxy: {
       '/api': {
-        target: 'https://procabackend.up.railway.app',
+        target: 'https://proca-backend-staging.up.railway.app/',
         changeOrigin: true,
         secure: true,
         rewrite: (path) => path,
