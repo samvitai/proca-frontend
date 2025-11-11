@@ -17,7 +17,7 @@ import { updateCachedUserProfile } from "@/lib/utils";
 // In production, use the environment variable or fallback to the production URL
 const API_BASE_URL = import.meta.env.DEV 
   ? '' 
-  : (import.meta.env.VITE_API_BASE_URL || 'https://procabackend.up.railway.app');
+  : (import.meta.env.VITE_API_BASE_URL || 'https://proca-backend-staging.up.railway.app');
 
 // Configure axios instance
 const api = axios.create({
