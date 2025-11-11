@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CA-TASKFLOW Design System - Professional CA Theme */
+
+@layer base {
+  :root {
+    /* Core backgrounds */
+    --background: 0 0% 100%;
+    --foreground: 210 22% 22%;
+    
+    /* CA Brand Colors */
+    --ca-primary: 210 40% 32%; /* Dark blue from sidebar */
+    --ca-primary-foreground: 210 40% 98%;
+    --ca-accent: 0 84% 60%; /* Red accent from buttons */
+    --ca-accent-foreground: 0 0% 100%;
+    
+    /* Cards and surfaces */
+    --card: 0 0% 100%;
+    --card-foreground: 210 22% 22%;
+    
+    /* Professional grays */
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --border: 0 0% 20%; /* Darker border for better visibility */
+    
+    /* Form elements */
+    --input: 0 0% 100%;
+    --input-border: 214 32% 91%;
+    --ring: 0 84% 60%;
+    
+    /* Sidebar theme */
+    --sidebar: 210 40% 32%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-accent: 210 50% 40%;
+    
+    /* Gradients */
+    --gradient-hero: linear-gradient(135deg, hsl(210 40% 32%) 0%, hsl(210 50% 25%) 100%);
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%) 0%, hsl(210 20% 98%) 100%);
+    
+    /* Primary system colors */
+    --primary: 210 40% 32%;
+    --primary-foreground: 210 40% 98%;
+    
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 210 40% 32%;
+    
+    --accent: 0 84% 60%;
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 22% 22%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 210 40% 15%;
+    --foreground: 210 40% 98%;
+    
+    --card: 210 40% 18%;
+    --card-foreground: 210 40% 98%;
+    
+    --ca-primary: 210 40% 20%;
+    --ca-accent: 0 84% 65%;
+    
+    --primary: 210 40% 98%;
+    --primary-foreground: 210 40% 15%;
+    
+    --secondary: 210 40% 25%;
+    --secondary-foreground: 210 40% 98%;
+    
+    --muted: 210 40% 25%;
+    --muted-foreground: 215 20% 65%;
+    
+    --accent: 0 84% 65%;
+    --accent-foreground: 210 40% 15%;
+    
+    --border: 0 0% 40%; /* Darker border for dark mode */
+    --input: 210 40% 20%;
+    --ring: 0 84% 65%;
+    
+    --sidebar: 210 40% 12%;
+    --sidebar-foreground: 210 40% 95%;
+    
+    --popover: 210 40% 18%;
+    --popover-foreground: 210 40% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* Date input styling to ensure 4-digit year display */
+  input[type="date"] {
+    font-variant-numeric: tabular-nums;
+  }
+  
+  input[type="date"]::-webkit-datetime-edit-year-field {
+    width: 4ch !important;
+  }
+  
+  /* Ensure proper truncation for searchable select options */
+  .truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
