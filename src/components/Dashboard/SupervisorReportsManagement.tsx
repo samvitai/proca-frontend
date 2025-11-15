@@ -1,29 +1,31 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, Calendar, BarChart3 } from "lucide-react";
+import { Search, Download, BarChart3, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { fetchTaskReport, exportReport, type ReportTask, type ReportFilters } from "@/services/reportService";
+import { api } from "@/lib/utils";
 
-interface ReportTask {
+interface Client {
+  client_id: string;
+  client_name: string;
+  client_code: string;
+}
+
+interface User {
   id: string;
-  client: string;
-  name: string;
-  description: string;
-  serviceCategory: string;
-  assignmentStatus: 'assigned' | 'not_assigned';
-  workflowStatus: 'open' | 'in_progress' | 'in_review' | 'closed';
-  workflowStatusGroup: 'pending' | 'completed';
-  assigneeId: string;
-  assigneeName: string;
-  clientId: string;
-  serviceCategoryId: string;
-  dueDate: string;
-  createdAt: string;
-  completedAt?: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+interface ServiceCategory {
+  service_category_id: string;
+  service_category_name: string;
 }
 
 const SupervisorReportsManagement = () => {
@@ -36,88 +38,153 @@ const SupervisorReportsManagement = () => {
   const [serviceCategoryFilter, setServiceCategoryFilter] = useState<string>("all");
   const [dueDateFrom, setDueDateFrom] = useState<string>("");
   const [dueDateTo, setDueDateTo] = useState<string>("");
-  const [exportFormat, setExportFormat] = useState<string>("xlsx");
+  const [exportFormat, setExportFormat] = useState<string>("csv");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
-  // Mock data
-  const [tasks] = useState<ReportTask[]>([
-    {
-      id: "1",
-      client: "ABC Corp",
-      name: "GST Return Filing Q1",
-      description: "File GST return for Q1 2024",
-      serviceCategory: "Return Filing",
-      assignmentStatus: "assigned",
-      workflowStatus: "in_progress",
-      workflowStatusGroup: "pending",
-      assigneeId: "emp1",
-      assigneeName: "John Doe",
-      clientId: "client1",
-      serviceCategoryId: "cat1",
-      dueDate: "2024-02-15",
-      createdAt: "2024-01-15"
-    },
-    {
-      id: "2",
-      client: "XYZ Ltd",
-      name: "Tax Consultation",
-      description: "Provide tax consultation for new business setup",
-      serviceCategory: "Consultation",
-      assignmentStatus: "assigned",
-      workflowStatus: "closed",
-      workflowStatusGroup: "completed",
-      assigneeId: "emp2",
-      assigneeName: "Jane Smith",
-      clientId: "client2",
-      serviceCategoryId: "cat2",
-      dueDate: "2024-02-10",
-      createdAt: "2024-01-16",
-      completedAt: "2024-02-08"
-    },
-    {
-      id: "3",
-      client: "DEF Inc",
-      name: "Audit Report",
-      description: "Complete annual audit report",
-      serviceCategory: "Audit",
-      assignmentStatus: "not_assigned",
-      workflowStatus: "open",
-      workflowStatusGroup: "pending",
-      assigneeId: "",
-      assigneeName: "",
-      clientId: "client3",
-      serviceCategoryId: "cat3",
-      dueDate: "2024-03-01",
-      createdAt: "2024-01-20"
-    }
-  ]);
-
-  const clients = Array.from(new Set(tasks.map(task => task.client)));
-  const assignees = Array.from(new Set(tasks.filter(task => task.assigneeName).map(task => task.assigneeName)));
-  const serviceCategories = Array.from(new Set(tasks.map(task => task.serviceCategory)));
-
-  const filteredTasks = tasks.filter(task => {
-    const matchesSearch = task.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesAssignmentStatus = assignmentStatusFilter === "all" || task.assignmentStatus === assignmentStatusFilter;
-    const matchesWorkflowStatus = workflowStatusFilter === "all" || task.workflowStatus === workflowStatusFilter;
-    const matchesWorkflowStatusGroup = workflowStatusGroupFilter === "all" || task.workflowStatusGroup === workflowStatusGroupFilter;
-    const matchesAssignee = assigneeFilter === "all" || task.assigneeName === assigneeFilter;
-    const matchesClient = clientFilter === "all" || task.client === clientFilter;
-    const matchesServiceCategory = serviceCategoryFilter === "all" || task.serviceCategory === serviceCategoryFilter;
-    const matchesDueDateFrom = !dueDateFrom || task.dueDate >= dueDateFrom;
-    const matchesDueDateTo = !dueDateTo || task.dueDate <= dueDateTo;
-    
-    return matchesSearch && matchesAssignmentStatus && matchesWorkflowStatus && 
-           matchesWorkflowStatusGroup && matchesAssignee && matchesClient && 
-           matchesServiceCategory && matchesDueDateFrom && matchesDueDateTo;
+  // Data states
+  const [tasks, setTasks] = useState<ReportTask[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [assignees, setAssignees] = useState<User[]>([]);
+  const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    assigned: 0,
+    completed: 0,
+    overdue: 0
   });
 
-  const handleExport = () => {
+  // Fetch filter options
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        // Fetch clients
+        const clientsRes = await api.get("/api/clients/?is_active=true");
+        const clientsData = clientsRes.data?.data?.clients || [];
+        setClients(clientsData);
+
+        // Fetch users (for assignees)
+        const usersRes = await api.get("/api/v1/users/organization/users?role=USERS");
+        const usersData = usersRes.data || {};
+        const allUsers = [
+          ...(usersData.admin || []),
+          ...(usersData.supervisor || []),
+          ...(usersData.employee || []),
+        ].filter((user: User) => user.is_active);
+        setAssignees(allUsers);
+
+        // Fetch service categories
+        const categoriesRes = await api.get("/api/master/service-categories?is_active=true");
+        const categoriesData = categoriesRes.data?.data?.service_categories || [];
+        setServiceCategories(categoriesData);
+      } catch (error) {
+        console.error('Error fetching filter options:', error);
+      }
+    };
+
+    fetchFilterOptions();
+  }, []);
+
+  // Fetch report data
+  useEffect(() => {
+    const loadTaskReport = async () => {
+      setIsLoading(true);
+      try {
+        const filters: ReportFilters = {
+          assignmentStatus: assignmentStatusFilter as any,
+          workflowStatus: workflowStatusFilter as any,
+          workflowStatusGroup: workflowStatusGroupFilter as any,
+          assigneeId: assigneeFilter !== 'all' ? assigneeFilter : undefined,
+          clientId: clientFilter !== 'all' ? clientFilter : undefined,
+          serviceCategoryId: serviceCategoryFilter !== 'all' ? serviceCategoryFilter : undefined,
+          dueDateFrom: dueDateFrom || undefined,
+          dueDateTo: dueDateTo || undefined,
+          search: searchTerm || undefined,
+        };
+
+        const response = await fetchTaskReport(filters);
+        const taskList: ReportTask[] = Array.isArray(response.data) ? response.data : [];
+        setTasks(taskList);
+        
+        // Calculate stats
+        setStats({
+          total: taskList.length,
+          assigned: taskList.filter(t => t.assignmentStatus === 'assigned').length,
+          completed: taskList.filter(t => t.workflowStatusGroup === 'completed').length,
+          overdue: taskList.filter(t => {
+            const dueDate = new Date(t.dueDate);
+            const now = new Date();
+            return dueDate < now && t.workflowStatusGroup === 'pending';
+          }).length
+        });
+      } catch (error) {
+        console.error('Error loading task report:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load report data. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadTaskReport();
+  }, [assignmentStatusFilter, workflowStatusFilter, workflowStatusGroupFilter, 
+      assigneeFilter, clientFilter, serviceCategoryFilter, dueDateFrom, dueDateTo, searchTerm]);
+
+  // Filter tasks based on search (client-side filtering for search term)
+  const filteredTasks = tasks.filter(task => {
+    if (!searchTerm) return true;
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      task.name.toLowerCase().includes(searchLower) ||
+      task.client.toLowerCase().includes(searchLower) ||
+      (task.description && task.description.toLowerCase().includes(searchLower))
+    );
+  });
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const filters: any = {
+        assignmentStatus: assignmentStatusFilter,
+        workflowStatus: workflowStatusFilter,
+        workflowStatusGroup: workflowStatusGroupFilter,
+        assigneeId: assigneeFilter !== 'all' ? assigneeFilter : undefined,
+        clientId: clientFilter !== 'all' ? clientFilter : undefined,
+        serviceCategoryId: serviceCategoryFilter !== 'all' ? serviceCategoryFilter : undefined,
+        dueDateFrom: dueDateFrom || undefined,
+        dueDateTo: dueDateTo || undefined,
+        search: searchTerm || undefined,
+      };
+
+      const blob = await exportReport('tasks', exportFormat as 'xlsx' | 'csv', filters);
+      
+      // Download the file
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `task-report.${exportFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Export Successful",
+        description: `Report exported as ${exportFormat.toUpperCase()}`,
+      });
+    } catch (error) {
+      console.error('Error exporting report:', error);
     toast({
-      title: "Export Started",
-      description: `Exporting ${filteredTasks.length} records as ${exportFormat.toUpperCase()}`,
+        title: "Export Failed",
+        description: "Failed to export report. Please try again.",
+        variant: "destructive",
     });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const getWorkflowStatusBadge = (status: ReportTask['workflowStatus']) => {
@@ -152,13 +219,6 @@ const SupervisorReportsManagement = () => {
     );
   };
 
-  // Calculate statistics
-  const stats = {
-    total: filteredTasks.length,
-    assigned: filteredTasks.filter(t => t.assignmentStatus === 'assigned').length,
-    completed: filteredTasks.filter(t => t.workflowStatusGroup === 'completed').length,
-    overdue: filteredTasks.filter(t => new Date(t.dueDate) < new Date() && t.workflowStatusGroup === 'pending').length
-  };
 
   return (
     <div className="space-y-6">
@@ -235,8 +295,12 @@ const SupervisorReportsManagement = () => {
                   <SelectItem value="csv">CSV</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={handleExport}>
+              <Button onClick={handleExport} disabled={isExporting}>
+                {isExporting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
                 <Download className="h-4 w-4 mr-2" />
+                )}
                 Export
               </Button>
             </div>
@@ -288,17 +352,19 @@ const SupervisorReportsManagement = () => {
               </SelectContent>
             </Select>
 
-            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Assignee" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Assignees</SelectItem>
-                {assignees.map(assignee => (
-                  <SelectItem key={assignee} value={assignee}>{assignee}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Assignee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Assignees</SelectItem>
+                    {assignees.map(assignee => (
+                      <SelectItem key={assignee.id} value={assignee.id}>
+                        {assignee.first_name} {assignee.last_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
@@ -309,7 +375,9 @@ const SupervisorReportsManagement = () => {
               <SelectContent>
                 <SelectItem value="all">All Clients</SelectItem>
                 {clients.map(client => (
-                  <SelectItem key={client} value={client}>{client}</SelectItem>
+                  <SelectItem key={client.client_id} value={client.client_id}>
+                    {client.client_name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -321,7 +389,9 @@ const SupervisorReportsManagement = () => {
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
                 {serviceCategories.map(category => (
-                  <SelectItem key={category} value={category}>{category}</SelectItem>
+                  <SelectItem key={category.service_category_id} value={category.service_category_id}>
+                    {category.service_category_name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -343,41 +413,49 @@ const SupervisorReportsManagement = () => {
         </CardHeader>
         
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Project Name</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Service Category</TableHead>
-                <TableHead>Assignment Status</TableHead>
-                <TableHead>Workflow Status</TableHead>
-                <TableHead>Status Group</TableHead>
-                <TableHead>Assignee</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead>Created Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredTasks.map((task) => (
-                <TableRow key={task.id}>
-                  <TableCell className="font-medium">{task.name}</TableCell>
-                  <TableCell>{task.client}</TableCell>
-                  <TableCell>{task.serviceCategory}</TableCell>
-                  <TableCell>{getAssignmentStatusBadge(task.assignmentStatus)}</TableCell>
-                  <TableCell>{getWorkflowStatusBadge(task.workflowStatus)}</TableCell>
-                  <TableCell>{getWorkflowStatusGroupBadge(task.workflowStatusGroup)}</TableCell>
-                  <TableCell>{task.assigneeName || 'Unassigned'}</TableCell>
-                  <TableCell>{task.dueDate}</TableCell>
-                  <TableCell>{task.createdAt}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {filteredTasks.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              No projects found matching the current filters.
+          {isLoading ? (
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-ca-primary" />
             </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project Name</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Service Category</TableHead>
+                  <TableHead>Assignment Status</TableHead>
+                  <TableHead>Workflow Status</TableHead>
+                  <TableHead>Status Group</TableHead>
+                  <TableHead>Assignee</TableHead>
+                  <TableHead>Due Date</TableHead>
+                  <TableHead>Created Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredTasks.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      No projects found matching the current filters.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredTasks.map((task) => (
+                    <TableRow key={task.id}>
+                      <TableCell className="font-medium">{task.name}</TableCell>
+                      <TableCell>{task.client}</TableCell>
+                      <TableCell>{task.serviceCategory}</TableCell>
+                      <TableCell>{getAssignmentStatusBadge(task.assignmentStatus)}</TableCell>
+                      <TableCell>{getWorkflowStatusBadge(task.workflowStatus)}</TableCell>
+                      <TableCell>{getWorkflowStatusGroupBadge(task.workflowStatusGroup)}</TableCell>
+                      <TableCell>{task.assigneeName || 'Unassigned'}</TableCell>
+                      <TableCell>{task.dueDate}</TableCell>
+                      <TableCell>{task.createdAt}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>

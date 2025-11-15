@@ -1,5 +1,5 @@
 // ClientManagement.tsx
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Search, Loader2, Plus, Eye, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Download } from "lucide-react";
+import { Search, Loader2, Plus, Eye, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload } from "lucide-react";
 import axios, { AxiosError } from "axios";
 import AddClientDialog from "./AddClientDialog";
 import ViewClientDetailsDialog from "./ViewClientDetailsDialog";
@@ -279,10 +279,12 @@ const ClientManagement = () => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [isViewDetailsOpen, setIsViewDetailsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sorting States
   const [sortColumn, setSortColumn] = useState<string | null>(null);
@@ -859,6 +861,63 @@ const ClientManagement = () => {
     }, 3000);
   };
 
+  // Bulk Upload function
+  const handleBulkUpload = async (file: File) => {
+    setIsUploading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await api.post<ApiResponse>(
+        '/api/public/bulk-import/clients',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      if (response.data.success) {
+        setSuccess(response.data.message || "Clients uploaded successfully!");
+        
+        // Refresh the clients list
+        await fetchClients();
+
+        setTimeout(() => {
+          setSuccess(null);
+        }, 5000);
+      } else {
+        throw new Error(response.data.message || "Failed to upload clients");
+      }
+    } catch (error: unknown) {
+      const errorMessage = handleApiError(error);
+      setError(errorMessage);
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle file input change
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleBulkUpload(file);
+    }
+  };
+
+  // Trigger file input click
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <>
       {/* Success/Error Alerts */}
@@ -994,6 +1053,31 @@ const ClientManagement = () => {
                   <SelectItem value="Inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <Button
+                onClick={handleUploadClick}
+                variant="outline"
+                disabled={isLoading || isUploading}
+                className="border-ca-primary text-ca-primary hover:bg-ca-primary hover:text-ca-primary-foreground"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload Clients
+                  </>
+                )}
+              </Button>
               <Button
                 onClick={handleExportToCSV}
                 variant="outline"

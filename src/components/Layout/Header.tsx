@@ -46,8 +46,13 @@ const Header = () => {
             ))}
           </nav>
 
-          {/* Sign In Button */}
+          {/* Sign In and Register Buttons */}
           <div className="flex items-center space-x-4">
+            <Link to="/auth/register">
+              <Button variant="outline" size="sm">
+                Register
+              </Button>
+            </Link>
             <Link to="/auth/signin">
               <Button variant="ca-primary" size="sm">
                 Sign In
@@ -84,6 +89,22 @@ const Header = () => {
                   {item.name}
                 </Link>
               ))}
+              <div className="flex flex-col space-y-2 pt-2 border-t">
+                <Link
+                  to="/auth/register"
+                  className="px-3 py-2 text-sm font-medium transition-colors hover:text-ca-accent text-foreground"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Register
+                </Link>
+                <Link
+                  to="/auth/signin"
+                  className="px-3 py-2 text-sm font-medium transition-colors hover:text-ca-accent text-foreground"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Sign In
+                </Link>
+              </div>
             </div>
           </nav>
         )}

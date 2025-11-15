@@ -9,6 +9,7 @@ import About from "./pages/About";
 import Services from "./pages/Services";
 import Contact from "./pages/Contact";
 import SignIn from "./pages/auth/SignIn";
+import Register from "./pages/auth/Register";
 import SuperAdminDashboard from "./pages/dashboard/SuperAdminDashboard";
 import SuperAdminUsers from "./pages/dashboard/SuperAdminUsers";
 import AdminDashboard from "./pages/dashboard/AdminDashboard";
@@ -21,6 +22,7 @@ import AdminInvoices from "./pages/dashboard/AdminInvoices";
 import AdminCreditNotes from "./pages/dashboard/AdminCreditNotes";
 import AdminDebitNotes from "./pages/dashboard/AdminDebitNotes";
 import AdminMessages from "./pages/dashboard/AdminMessages";
+import AdminReports from "./pages/dashboard/AdminReports";
 import SupervisorTasks from "./pages/dashboard/SupervisorTasks";
 import EmployeeTasks from "./pages/dashboard/EmployeeTasks";
 import ClientDashboard from "./pages/dashboard/ClientDashboard";
@@ -49,6 +51,7 @@ const App = () => (
           <Route path="/services" element={<Services />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/auth/signin" element={<SignIn />} />
+          <Route path="/auth/register" element={<Register />} />
           <Route path="/dashboard/superadmin" element={<SuperAdminDashboard />} />
           <Route path="/dashboard/superadmin/users" element={<SuperAdminUsers />} />
           <Route path="/dashboard/superadmin/profile" element={<Profile />} />
@@ -62,6 +65,7 @@ const App = () => (
           <Route path="/dashboard/admin/invoices" element={<AdminInvoices />} />
           <Route path="/dashboard/admin/credit-notes" element={<AdminCreditNotes />} />
           <Route path="/dashboard/admin/debit-notes" element={<AdminDebitNotes />} />
+          <Route path="/dashboard/admin/reports" element={<AdminReports />} />
           <Route path="/dashboard/admin/profile" element={<Profile />} />
           
           {/* Supervisor Routes */}

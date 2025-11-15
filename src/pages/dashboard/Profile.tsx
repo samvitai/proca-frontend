@@ -9,9 +9,6 @@ import { UserCircle, Mail, Phone, Building, Loader2 } from "lucide-react";
 import { api, getCachedUserProfile, updateCachedUserProfile } from "@/lib/utils";
 import axios from 'axios';
 
-// API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-
 const Profile = () => {
   const userEmail = localStorage.getItem('userEmail') || 'user@example.com';
   const userRole = (localStorage.getItem('userRole') || 'admin') as 'superadmin' | 'admin' | 'supervisor' | 'employee' | 'client';
@@ -75,48 +72,31 @@ const Profile = () => {
       // Continue with API call to get fresh data, but don't show loading state
     }
 
-    setLoading(true);
+    // Only show loading if we don't have cached data
+    if (!cachedProfile) {
+      setLoading(true);
+    }
     
     try {
-      const authToken = localStorage.getItem('authToken');
-      
-      if (!authToken) {
-        toast({
-          title: "Authentication Error",
-          description: "Please sign in again",
-          variant: "destructive"
-        });
-        setLoading(false);
-        return;
-      }
-
       console.log('Fetching user profile for ID:', userId, 'Type:', typeof userId);
       
-      const response = await axios.get(
-        `${API_BASE_URL}/api/v1/users/users/${userId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      const response = await api.get(`/api/v1/users/users/${userId}`);
 
-      // The API returns user data directly, not wrapped in a success object
+      // Handle different response structures
       let userData;
-      if (response.data && response.status === 200) {
+      if (response.data?.success && response.data?.data) {
+        userData = response.data.data;
+      } else if (response.data && !response.data.detail) {
+        // Direct user data in response.data (not wrapped in success object)
         userData = response.data;
+      } else if (response.data?.detail) {
+        // API returned an error detail (like "User not found")
+        throw new Error(response.data.detail);
       } else {
         throw new Error('Failed to fetch user profile');
       }
 
       console.log('Fetched user data:', userData);
-      console.log('User data fields:', {
-        first_name: userData.first_name,
-        last_name: userData.last_name,
-        email: userData.email,
-        phone: userData.phone
-      });
 
       const updatedFormData = {
         firstName: userData.first_name || '',
@@ -125,21 +105,22 @@ const Profile = () => {
         phone: userData.phone || '',
       };
 
-      console.log('Setting form data:', updatedFormData);
-      console.log('Form will show placeholders with these values:', {
-        firstName: updatedFormData.firstName || 'Enter your first name',
-        lastName: updatedFormData.lastName || 'Enter your last name',
-        email: updatedFormData.email || 'Enter your email address',
-        phone: updatedFormData.phone || 'Enter your phone number'
-      });
       setFormData(updatedFormData);
       
       // Update the cached profile data using utility function
       updateCachedUserProfile(userData);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching user profile:', error);
       
-      // Fallback to localStorage if API fails
+      // Check if we have cached data to use
+      if (cachedProfile) {
+        // We already set the form data from cache, just show a subtle warning
+        console.log('Using cached profile data due to API error');
+        // Don't show toast if we already have cached data displayed
+        return;
+      }
+      
+      // Fallback to localStorage if API fails and no cached data
       const firstName = localStorage.getItem('userFirstName') || '';
       const lastName = localStorage.getItem('userLastName') || '';
       const phone = localStorage.getItem('userPhone') || '';
@@ -151,11 +132,17 @@ const Profile = () => {
         phone,
       });
 
-      toast({
-        title: "Warning",
-        description: "Using cached profile data. Some information may be outdated.",
-        variant: "destructive"
-      });
+      // Only show warning if we don't have any cached/localStorage data
+      if (!firstName && !lastName && !phone) {
+        const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to fetch profile';
+        toast({
+          title: "Warning",
+          description: errorMessage === 'User not found' 
+            ? "User profile not found. Please contact support."
+            : "Using cached profile data. Some information may be outdated.",
+          variant: "destructive"
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -208,17 +195,6 @@ const Profile = () => {
     setSaving(true);
     
     try {
-      const authToken = localStorage.getItem('authToken');
-      
-      if (!authToken) {
-        toast({
-          title: "Authentication Error",
-          description: "Please sign in again",
-          variant: "destructive"
-        });
-        return;
-      }
-
       const updateData = {
         first_name: formData.firstName,
         last_name: formData.lastName,
@@ -229,39 +205,40 @@ const Profile = () => {
 
       console.log('Updating user profile for ID:', userId, 'Type:', typeof userId, 'Data:', updateData);
 
-      const response = await axios.put(
-        `${API_BASE_URL}/api/v1/users/users/${userId}`,
-        updateData,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          }
-        }
+      const response = await api.put(
+        `/api/v1/users/users/${userId}`,
+        updateData
       );
 
-      // The API returns the updated user data directly, not wrapped in a success object
-      if (response.data && response.status === 200) {
-        // Update localStorage with new data
-        localStorage.setItem('userFirstName', formData.firstName);
-        localStorage.setItem('userLastName', formData.lastName);
-        localStorage.setItem('userEmail', formData.email);
-        localStorage.setItem('userPhone', formData.phone);
-
-        // Update cached profile data
-        updateCachedUserProfile(response.data);
-
-        setIsEditing(false);
-        toast({
-          title: "Success",
-          description: "Profile updated successfully",
-        });
-        
-        // Re-fetch profile data to update placeholders/values
-        await fetchUserProfile();
+      // Handle different response structures
+      let userData;
+      if (response.data?.success && response.data?.data) {
+        userData = response.data.data;
+      } else if (response.data && !response.data.detail) {
+        userData = response.data;
+      } else if (response.data?.detail) {
+        throw new Error(response.data.detail);
       } else {
         throw new Error('Failed to update profile');
       }
+
+      // Update localStorage with new data
+      localStorage.setItem('userFirstName', formData.firstName);
+      localStorage.setItem('userLastName', formData.lastName);
+      localStorage.setItem('userEmail', formData.email);
+      localStorage.setItem('userPhone', formData.phone);
+
+      // Update cached profile data
+      updateCachedUserProfile(userData);
+
+      setIsEditing(false);
+      toast({
+        title: "Success",
+        description: "Profile updated successfully",
+      });
+      
+      // Re-fetch profile data to update placeholders/values
+      await fetchUserProfile();
     } catch (error) {
       console.error('Error updating profile:', error);
       
