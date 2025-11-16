@@ -1399,11 +1399,16 @@ const AdminTaskManagement = () => {
                     responseData?.data?.errors ??
                     responseData?.data?.row_errors ??
                     responseData?.data?.rows;
+                  const validationErrors =
+                    responseData?.validation_errors ??
+                    responseData?.data?.validation_errors;
 
                   const combinedErrors = Array.isArray(topLevelErrors)
                     ? topLevelErrors
                     : Array.isArray(dataErrors)
                     ? dataErrors
+                    : Array.isArray(validationErrors)
+                    ? validationErrors
                     : [];
 
                   const hasErrorsArray =
@@ -1449,6 +1454,25 @@ const AdminTaskManagement = () => {
                             details = `Missing required field${
                               missingFields.length > 1 ? "s" : ""
                             }: ${missingFields.join(", ")}`;
+                          } else if (
+                            err.errors &&
+                            typeof err.errors === "object" &&
+                            !Array.isArray(err.errors)
+                          ) {
+                            // Handle key-value error objects like:
+                            // { errors: { duplicate_task: "Task already exists ..." } }
+                            const errorEntries = Object.entries(err.errors).map(
+                              ([key, value]) =>
+                                `${String(key)
+                                  .replace(/_/g, " ")
+                                  .replace(/\b\w/g, (c) => c.toUpperCase())}: ${String(
+                                  value
+                                )}`
+                            );
+                            details =
+                              errorEntries.length > 0
+                                ? errorEntries.join("; ")
+                                : "Invalid data in this row";
                           } else if (err.message) {
                             details = String(err.message);
                           } else {
@@ -1513,11 +1537,16 @@ const AdminTaskManagement = () => {
                       data?.data?.errors ??
                       data?.data?.row_errors ??
                       data?.data?.rows;
+                    const validationErrors =
+                      data?.validation_errors ??
+                      data?.data?.validation_errors;
 
                     const errors = Array.isArray(topLevelErrors)
                       ? topLevelErrors
                       : Array.isArray(dataErrors)
                       ? dataErrors
+                      : Array.isArray(validationErrors)
+                      ? validationErrors
                       : [];
 
                     if (Array.isArray(errors) && errors.length > 0) {
@@ -1534,6 +1563,23 @@ const AdminTaskManagement = () => {
                             details = `Missing required field${
                               missingFields.length > 1 ? "s" : ""
                             }: ${missingFields.join(", ")}`;
+                          } else if (
+                            err.errors &&
+                            typeof err.errors === "object" &&
+                            !Array.isArray(err.errors)
+                          ) {
+                            const errorEntries = Object.entries(err.errors).map(
+                              ([key, value]) =>
+                                `${String(key)
+                                  .replace(/_/g, " ")
+                                  .replace(/\b\w/g, (c) => c.toUpperCase())}: ${String(
+                                  value
+                                )}`
+                            );
+                            details =
+                              errorEntries.length > 0
+                                ? errorEntries.join("; ")
+                                : "Invalid data in this row";
                           } else if (err.message) {
                             details = String(err.message);
                           } else {

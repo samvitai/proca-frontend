@@ -362,8 +362,16 @@ const AdminReportsManagement = () => {
     }
   };
 
-  const getWorkflowStatusBadge = (status: ReportTask['workflowStatus']) => {
-    const colors = {
+  const getWorkflowStatusBadge = (status: ReportTask['workflowStatus'] | undefined) => {
+    if (!status) {
+      return (
+        <Badge className="bg-gray-400">
+          Unknown
+        </Badge>
+      );
+    }
+
+    const colors: Record<string, string> = {
       'open': 'bg-gray-500',
       'in_progress': 'bg-blue-500',
       'in_review': 'bg-yellow-500',
@@ -377,19 +385,25 @@ const AdminReportsManagement = () => {
     );
   };
 
-  const getAssignmentStatusBadge = (status: ReportTask['assignmentStatus']) => {
+  const getAssignmentStatusBadge = (status: ReportTask['assignmentStatus'] | undefined) => {
+    const label = status ? status.replace('_', ' ') : 'Not Assigned';
+
     return (
       <Badge variant={status === 'assigned' ? 'default' : 'secondary'}>
-        {status.replace('_', ' ')}
+        {label}
       </Badge>
     );
   };
 
-  const getWorkflowStatusGroupBadge = (group: ReportTask['workflowStatusGroup']) => {
+  const getWorkflowStatusGroupBadge = (group: ReportTask['workflowStatusGroup'] | undefined) => {
+    const label = group || 'Pending';
+
     return (
-      <Badge variant={group === 'completed' ? 'default' : 'secondary'} 
-             className={group === 'completed' ? 'bg-green-500' : 'bg-orange-500'}>
-        {group}
+      <Badge
+        variant={group === 'completed' ? 'default' : 'secondary'}
+        className={group === 'completed' ? 'bg-green-500' : 'bg-orange-500'}
+      >
+        {label}
       </Badge>
     );
   };

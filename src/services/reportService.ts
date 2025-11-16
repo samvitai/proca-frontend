@@ -7,9 +7,10 @@ export interface ReportTask {
   name: string;
   description?: string;
   serviceCategory: string;
-  assignmentStatus: 'assigned' | 'not_assigned';
-  workflowStatus: 'open' | 'in_progress' | 'in_review' | 'closed';
-  workflowStatusGroup: 'pending' | 'completed';
+  // Some backends return "unassigned" or "not_assigned" – support both
+  assignmentStatus: "assigned" | "not_assigned" | "unassigned";
+  workflowStatus: "open" | "in_progress" | "in_review" | "closed";
+  workflowStatusGroup: "pending" | "completed";
   assigneeId?: string;
   assigneeName?: string;
   clientId: string;
@@ -112,9 +113,9 @@ export interface ClientStatementReportResponse {
 
 // Query parameters for reports
 export interface ReportFilters {
-  assignmentStatus?: 'assigned' | 'not_assigned' | 'all';
-  workflowStatus?: 'open' | 'in_progress' | 'in_review' | 'closed' | 'all';
-  workflowStatusGroup?: 'pending' | 'completed' | 'all';
+  assignmentStatus?: "assigned" | "not_assigned" | "unassigned" | "all";
+  workflowStatus?: "open" | "in_progress" | "in_review" | "closed" | "all";
+  workflowStatusGroup?: "pending" | "completed" | "all";
   assigneeId?: string;
   clientId?: string;
   serviceCategoryId?: string;
@@ -166,7 +167,7 @@ export const fetchTaskReport = async (filters?: ReportFilters): Promise<TaskRepo
       }
     }
 
-    const url = `/api/reports/tasks${params.toString() ? `?${params.toString()}` : ''}`;
+    const url = `/api/reports/tasks${params.toString() ? `?${params.toString()}` : ""}`;
     const response = await api.get<any>(url);
     
     if (!response.data || !response.data.success) {
@@ -174,7 +175,7 @@ export const fetchTaskReport = async (filters?: ReportFilters): Promise<TaskRepo
     }
     
     // Normalize the response structure
-    let normalizedData: ReportTask[] = [];
+    let normalizedData: any[] = [];
     if (Array.isArray(response.data.data)) {
       normalizedData = response.data.data;
     } else if (response.data.data && Array.isArray(response.data.data.tasks)) {
@@ -182,10 +183,66 @@ export const fetchTaskReport = async (filters?: ReportFilters): Promise<TaskRepo
     } else if (Array.isArray(response.data.tasks)) {
       normalizedData = response.data.tasks;
     }
+
+    // Map snake_case keys from the API into the camelCase structure
+    const mappedTasks: ReportTask[] = normalizedData.map((t) => {
+      // Prefer explicit assignment status from API; fall back to assignee presence
+      const rawAssignmentStatus: string | undefined =
+        t.assignmentStatus ?? t.assignment_status;
+
+      let assignmentStatus: ReportTask["assignmentStatus"] = "not_assigned";
+      if (rawAssignmentStatus === "assigned") {
+        assignmentStatus = "assigned";
+      } else if (rawAssignmentStatus === "unassigned" || rawAssignmentStatus === "not_assigned") {
+        assignmentStatus = rawAssignmentStatus as ReportTask["assignmentStatus"];
+      } else if (t.assignee_id || t.assigneeId) {
+        assignmentStatus = "assigned";
+      }
+
+      const rawWorkflowStatus: ReportTask["workflowStatus"] =
+        t.workflowStatus ?? t.workflow_status ?? "open";
+
+      const rawWorkflowStatusGroup: ReportTask["workflowStatusGroup"] =
+        t.workflowStatusGroup ??
+        t.workflow_status_group ??
+        (rawWorkflowStatus === "closed" ? "completed" : "pending");
+
+      return {
+        id: t.id ?? t.task_id ?? "",
+        client: t.client ?? t.client_name ?? "",
+        name: t.name ?? t.task_name ?? "",
+        description: t.description ?? t.service_description,
+        serviceCategory:
+          t.serviceCategory ??
+          t.service_category_name ??
+          t.service_category ??
+          t.category_name ??
+          "",
+        assignmentStatus,
+        workflowStatus: rawWorkflowStatus,
+        workflowStatusGroup: rawWorkflowStatusGroup,
+        assigneeId: t.assigneeId ?? t.assignee_id,
+        assigneeName: t.assigneeName ?? t.assignee_name,
+        clientId: t.clientId ?? t.client_id ?? "",
+        serviceCategoryId:
+          t.serviceCategoryId ??
+          t.service_category_id ??
+          t.category_id ??
+          "",
+        dueDate: t.dueDate ?? t.due_date ?? "",
+        createdAt:
+          t.createdAt ??
+          t.created_at ??
+          t.created_date ??
+          t.task_created_at ??
+          "",
+        completedAt: t.completedAt ?? t.completed_at,
+      };
+    });
     
     return {
       success: response.data.success,
-      data: normalizedData,
+      data: mappedTasks,
       summary: response.data.summary || response.data.data?.summary
     };
   } catch (error) {
