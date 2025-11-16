@@ -30,6 +30,7 @@ import axios, { AxiosError } from "axios";
 import AddClientDialog from "./AddClientDialog";
 import ViewClientDetailsDialog from "./ViewClientDetailsDialog";
 import { api } from "@/lib/utils";
+import { toast } from "@/hooks/use-toast";
 
 // TypeScript Interfaces for API
 interface Address {
@@ -869,21 +870,64 @@ const ClientManagement = () => {
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append("file", file);
 
-      const response = await api.post<ApiResponse>(
-        '/api/public/bulk-import/clients',
+      const response = await api.post(
+        "/api/public/bulk-import/clients",
         formData,
         {
           headers: {
-            'Content-Type': 'multipart/form-data',
+            "Content-Type": "multipart/form-data",
           },
         }
       );
 
-      if (response.data.success) {
-        setSuccess(response.data.message || "Clients uploaded successfully!");
-        
+      const responseData: any = response.data;
+
+      // Collect possible error arrays from different shapes the backend might use
+      const topLevelErrors = responseData?.errors;
+      const dataErrors =
+        responseData?.data?.errors ??
+        responseData?.data?.row_errors ??
+        responseData?.data?.rows;
+      // Client bulk upload specific: validation_errors array with row_number, identifier, errors{missing_fields,...}
+      const validationErrors =
+        responseData?.validation_errors ??
+        responseData?.data?.validation_errors;
+
+      const combinedErrors = Array.isArray(topLevelErrors)
+        ? topLevelErrors
+        : Array.isArray(dataErrors)
+        ? dataErrors
+        : Array.isArray(validationErrors)
+        ? validationErrors
+        : [];
+
+      const hasErrorsArray =
+        Array.isArray(combinedErrors) && combinedErrors.length > 0;
+
+      // Treat responses with error details as failures,
+      // even if `success` is true, so we can surface row/header errors.
+      // Also treat responses that clearly indicate only errors in the message as failures
+      const message: string | undefined = responseData?.message;
+      const looksLikeOnlyErrorsMessage =
+        typeof message === "string" &&
+        /errors?/i.test(message) &&
+        /0 imported/i.test(message || "");
+
+      if (responseData?.success && !hasErrorsArray && !looksLikeOnlyErrorsMessage) {
+        const successMessage =
+          responseData?.message ??
+          "Bulk clients have been uploaded successfully.";
+
+        setSuccess(successMessage);
+        toast({
+          title: "Clients uploaded",
+          description: successMessage,
+        });
+
+        setError(null);
+
         // Refresh the clients list
         await fetchClients();
 
@@ -891,16 +935,174 @@ const ClientManagement = () => {
           setSuccess(null);
         }, 5000);
       } else {
-        throw new Error(response.data.message || "Failed to upload clients");
+        // Try to surface detailed row/column/header errors if provided by backend
+        const errors = combinedErrors;
+        if (Array.isArray(errors) && errors.length > 0) {
+          // Handle row-level validation errors like:
+          // { row_number: 7, identifier: "Unknown", errors: { missing_fields: [...] } }
+          const rowErrorMessages = errors
+            .filter((err: any) => typeof err === "object" && err !== null)
+            .map((err: any) => {
+              const rowNumber = err.row_number ?? err.row ?? "?";
+              const identifier = err.identifier;
+              const missingFields =
+                err.errors?.missing_fields ?? err.missing_fields;
+              let details = "";
+
+              if (Array.isArray(missingFields) && missingFields.length > 0) {
+                details = `Missing required field${
+                  missingFields.length > 1 ? "s" : ""
+                }: ${missingFields.join(", ")}`;
+              } else if (err.message) {
+                details = String(err.message);
+              } else {
+                details = "Invalid data in this row";
+              }
+
+              return `Row ${rowNumber}${
+                identifier ? ` (Identifier: ${identifier})` : ""
+              } - ${details}`;
+            })
+            .filter((msg: string) => msg.trim().length > 0);
+
+          let description: string;
+
+          if (rowErrorMessages.length > 0) {
+            const totalErrors = rowErrorMessages.length;
+            description = `Found ${totalErrors} error${
+              totalErrors > 1 ? "s" : ""
+            } in the uploaded file. ${rowErrorMessages.join(" | ")}`;
+          } else {
+            // Fallback to header/column style errors if present
+            const headerError =
+              errors.find(
+                (err: any) =>
+                  typeof err.field === "string" &&
+                  (err.field.toLowerCase().includes("header") ||
+                    err.field.toLowerCase().includes("column"))
+              ) || errors[0];
+
+            description = `Error in "${
+              headerError.field ?? "file"
+            }": ${headerError.message ?? "Invalid value"}`;
+          }
+
+          setError(description);
+
+          toast({
+            title: "Upload failed",
+            description,
+            variant: "destructive",
+          });
+        } else {
+          const description =
+            responseData?.message ??
+            "Failed to upload clients. Please try again.";
+          setError(description);
+
+          toast({
+            title: "Upload failed",
+            description,
+            variant: "destructive",
+          });
+        }
       }
     } catch (error: unknown) {
-      const errorMessage = handleApiError(error);
-      setError(errorMessage);
+      // Prefer header/column specific message if backend sends it
+      if (isAxiosError(error)) {
+        const data: any = error.response?.data;
+
+        const topLevelErrors = data?.errors;
+        const dataErrors =
+          data?.data?.errors ?? data?.data?.row_errors ?? data?.data?.rows;
+        const validationErrors =
+          data?.validation_errors ?? data?.data?.validation_errors;
+
+        const errors = Array.isArray(topLevelErrors)
+          ? topLevelErrors
+          : Array.isArray(dataErrors)
+          ? dataErrors
+          : Array.isArray(validationErrors)
+          ? validationErrors
+          : [];
+
+        if (Array.isArray(errors) && errors.length > 0) {
+          const rowErrorMessages = errors
+            .filter((err: any) => typeof err === "object" && err !== null)
+            .map((err: any) => {
+              const rowNumber = err.row_number ?? err.row ?? "?";
+              const identifier = err.identifier;
+              const missingFields =
+                err.errors?.missing_fields ?? err.missing_fields;
+              let details = "";
+
+              if (Array.isArray(missingFields) && missingFields.length > 0) {
+                details = `Missing required field${
+                  missingFields.length > 1 ? "s" : ""
+                }: ${missingFields.join(", ")}`;
+              } else if (err.message) {
+                details = String(err.message);
+              } else {
+                details = "Invalid data in this row";
+              }
+
+              return `Row ${rowNumber}${
+                identifier ? ` (Identifier: ${identifier})` : ""
+              } - ${details}`;
+            })
+            .filter((msg: string) => msg.trim().length > 0);
+
+          let description: string;
+
+          if (rowErrorMessages.length > 0) {
+            const totalErrors = rowErrorMessages.length;
+            description = `Found ${totalErrors} error${
+              totalErrors > 1 ? "s" : ""
+            } in the uploaded file. ${rowErrorMessages.join(" | ")}`;
+          } else {
+            const headerError =
+              errors.find(
+                (err: any) =>
+                  typeof err.field === "string" &&
+                  (err.field.toLowerCase().includes("header") ||
+                    err.field.toLowerCase().includes("column"))
+              ) || errors[0];
+
+            description = `Error in "${
+              headerError.field ?? "file"
+            }": ${headerError.message ?? "Invalid value"}`;
+          }
+
+          setError(description);
+
+          toast({
+            title: "Upload failed",
+            description,
+            variant: "destructive",
+          });
+        } else {
+          const errorMessage = handleApiError(error);
+          setError(errorMessage);
+          toast({
+            title: "Upload failed",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        }
+      } else {
+        const errorMessage = handleApiError(error);
+        setError(errorMessage);
+        toast({
+          title: "Upload failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsUploading(false);
       // Reset file input
       if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+        fileInputRef.current.value = "";
       }
     }
   };

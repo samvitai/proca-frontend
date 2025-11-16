@@ -283,6 +283,7 @@ const isApiErrorResponse = (obj: unknown): obj is ApiListResponse => {
 const AdminTaskManagement = () => {
   // Dialog States
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isBulkUploadDialogOpen, setIsBulkUploadDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -293,6 +294,8 @@ const AdminTaskManagement = () => {
   const [isInvoicePopupOpen, setIsInvoicePopupOpen] = useState(false);
   const [generatedInvoiceData, setGeneratedInvoiceData] = useState<any>(null);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState<string | null>(null);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
 
   // Filter States
   const [searchTerm, setSearchTerm] = useState("");
@@ -978,23 +981,43 @@ const AdminTaskManagement = () => {
                 {summary.unassigned_tasks}
               </p>
             </div>
-            <Button
-              onClick={() => setIsAddDialogOpen(true)}
-              className="bg-ca-accent hover:bg-ca-accent/90 text-ca-accent-foreground"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Project
-                </>
-              )}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsBulkUploadDialogOpen(true)}
+                disabled={isBulkUploading || isLoading}
+                className="border-ca-accent text-ca-accent hover:bg-ca-accent/10"
+              >
+                {isBulkUploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Projects
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={() => setIsAddDialogOpen(true)}
+                className="bg-ca-accent hover:bg-ca-accent/90 text-ca-accent-foreground"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Project
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
 
           {/* Search and Filter Bar */}
@@ -1298,6 +1321,300 @@ const AdminTaskManagement = () => {
       </Card>
 
       {/* Dialogs */}
+      {/* Bulk Upload Dialog */}
+      <Dialog
+        open={isBulkUploadDialogOpen}
+        onOpenChange={(open) => {
+          setIsBulkUploadDialogOpen(open);
+          if (!open) {
+            setBulkUploadFile(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Upload Projects</DialogTitle>
+            <DialogDescription>
+              Upload a file to bulk import projects. Supported format will depend on backend configuration (e.g. CSV or Excel).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Select File</p>
+              <Input
+                type="file"
+                accept=".csv, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setBulkUploadFile(file);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Choose the bulk import template file provided for tasks.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsBulkUploadDialogOpen(false);
+                setBulkUploadFile(null);
+              }}
+              disabled={isBulkUploading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!bulkUploadFile) {
+                  toast({
+                    title: "No file selected",
+                    description: "Please choose a file to upload.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                try {
+                  setIsBulkUploading(true);
+                  const formData = new FormData();
+                  formData.append("file", bulkUploadFile);
+
+                  const response = await api.post(
+                    "/api/public/bulk-import/tasks",
+                    formData,
+                    {
+                      headers: {
+                        "Content-Type": "multipart/form-data",
+                      },
+                    }
+                  );
+
+                  const responseData = response.data;
+
+                  // Collect possible error arrays from different shapes the backend might use
+                  const topLevelErrors = responseData?.errors;
+                  const dataErrors =
+                    responseData?.data?.errors ??
+                    responseData?.data?.row_errors ??
+                    responseData?.data?.rows;
+
+                  const combinedErrors = Array.isArray(topLevelErrors)
+                    ? topLevelErrors
+                    : Array.isArray(dataErrors)
+                    ? dataErrors
+                    : [];
+
+                  const hasErrorsArray =
+                    Array.isArray(combinedErrors) && combinedErrors.length > 0;
+
+                  // Treat responses with error details as failures,
+                  // even if `success` is true, so we can surface row/header errors.
+                  // Also treat responses that clearly indicate only errors in the message as failures
+                  const message: string | undefined = responseData?.message;
+                  const looksLikeOnlyErrorsMessage =
+                    typeof message === "string" &&
+                    /errors?/i.test(message) &&
+                    /0 imported/i.test(message);
+
+                  if (responseData?.success && !hasErrorsArray && !looksLikeOnlyErrorsMessage) {
+                    toast({
+                      title: "Projects uploaded",
+                      description:
+                        responseData?.message ??
+                        "Bulk projects have been uploaded successfully.",
+                    });
+                    setError(null);
+                    setIsBulkUploadDialogOpen(false);
+                    setBulkUploadFile(null);
+                    // Refresh tasks to show newly imported projects
+                    await fetchTasks();
+                  } else {
+                    // Try to surface detailed row/column errors if provided by backend
+                    const errors = combinedErrors;
+                    if (Array.isArray(errors) && errors.length > 0) {
+                      // Handle row-level validation errors like:
+                      // { row_number: 7, identifier: "Unknown", errors: { missing_fields: [...] } }
+                      const rowErrorMessages = errors
+                        .filter((err: any) => typeof err === "object" && err !== null)
+                        .map((err: any) => {
+                          const rowNumber = err.row_number ?? err.row ?? "?";
+                          const identifier = err.identifier;
+                          const missingFields =
+                            err.errors?.missing_fields ?? err.missing_fields;
+                          let details = "";
+
+                          if (Array.isArray(missingFields) && missingFields.length > 0) {
+                            details = `Missing required field${
+                              missingFields.length > 1 ? "s" : ""
+                            }: ${missingFields.join(", ")}`;
+                          } else if (err.message) {
+                            details = String(err.message);
+                          } else {
+                            details = "Invalid data in this row";
+                          }
+
+                          return `Row ${rowNumber}${
+                            identifier ? ` (Identifier: ${identifier})` : ""
+                          } - ${details}`;
+                        })
+                        .filter((msg: string) => msg.trim().length > 0);
+
+                      let description: string;
+
+                      if (rowErrorMessages.length > 0) {
+                        const totalErrors = rowErrorMessages.length;
+                        description = `Found ${totalErrors} error${
+                          totalErrors > 1 ? "s" : ""
+                        } in the uploaded file. ${rowErrorMessages.join(" | ")}`;
+                      } else {
+                        // Fallback to header/column style errors if present
+                        const headerError =
+                          errors.find(
+                            (err: any) =>
+                              typeof err.field === "string" &&
+                              (err.field.toLowerCase().includes("header") ||
+                                err.field.toLowerCase().includes("column"))
+                          ) || errors[0];
+
+                        description = `Error in "${
+                          headerError.field ?? "file"
+                        }": ${headerError.message ?? "Invalid value"}`;
+                      }
+
+                      setError(description);
+
+                      toast({
+                        title: "Upload failed",
+                        description,
+                        variant: "destructive",
+                      });
+                    } else {
+                      const description =
+                        response.data?.message ??
+                        "Failed to upload projects. Please try again.";
+                      setError(description);
+
+                      toast({
+                        title: "Upload failed",
+                        description,
+                        variant: "destructive",
+                      });
+                    }
+                  }
+                } catch (error: unknown) {
+                  // Prefer header/column specific message if backend sends it
+                  if (isAxiosError(error)) {
+                    const data: any = error.response?.data;
+
+                    const topLevelErrors = data?.errors;
+                    const dataErrors =
+                      data?.data?.errors ??
+                      data?.data?.row_errors ??
+                      data?.data?.rows;
+
+                    const errors = Array.isArray(topLevelErrors)
+                      ? topLevelErrors
+                      : Array.isArray(dataErrors)
+                      ? dataErrors
+                      : [];
+
+                    if (Array.isArray(errors) && errors.length > 0) {
+                      const rowErrorMessages = errors
+                        .filter((err: any) => typeof err === "object" && err !== null)
+                        .map((err: any) => {
+                          const rowNumber = err.row_number ?? err.row ?? "?";
+                          const identifier = err.identifier;
+                          const missingFields =
+                            err.errors?.missing_fields ?? err.missing_fields;
+                          let details = "";
+
+                          if (Array.isArray(missingFields) && missingFields.length > 0) {
+                            details = `Missing required field${
+                              missingFields.length > 1 ? "s" : ""
+                            }: ${missingFields.join(", ")}`;
+                          } else if (err.message) {
+                            details = String(err.message);
+                          } else {
+                            details = "Invalid data in this row";
+                          }
+
+                          return `Row ${rowNumber}${
+                            identifier ? ` (Identifier: ${identifier})` : ""
+                          } - ${details}`;
+                        })
+                        .filter((msg: string) => msg.trim().length > 0);
+
+                      let description: string;
+
+                      if (rowErrorMessages.length > 0) {
+                        const totalErrors = rowErrorMessages.length;
+                        description = `Found ${totalErrors} error${
+                          totalErrors > 1 ? "s" : ""
+                        } in the uploaded file. ${rowErrorMessages.join(" | ")}`;
+                      } else {
+                        const headerError =
+                          errors.find(
+                            (err: any) =>
+                              typeof err.field === "string" &&
+                              (err.field.toLowerCase().includes("header") ||
+                                err.field.toLowerCase().includes("column"))
+                          ) || errors[0];
+
+                        description = `Error in "${
+                          headerError.field ?? "file"
+                        }": ${headerError.message ?? "Invalid value"}`;
+                      }
+
+                      setError(description);
+
+                      toast({
+                        title: "Upload failed",
+                        description,
+                        variant: "destructive",
+                      });
+                    } else {
+                      const errorMessage = handleApiError(error);
+                      setError(errorMessage);
+                      toast({
+                        title: "Upload failed",
+                        description: errorMessage,
+                        variant: "destructive",
+                      });
+                    }
+                  } else {
+                    const errorMessage = handleApiError(error);
+                    setError(errorMessage);
+                    toast({
+                      title: "Upload failed",
+                      description: errorMessage,
+                      variant: "destructive",
+                    });
+                  }
+                } finally {
+                  setIsBulkUploading(false);
+                }
+              }}
+              disabled={isBulkUploading}
+              className="bg-ca-accent hover:bg-ca-accent/90 text-ca-accent-foreground"
+            >
+              {isBulkUploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AddTaskDialog
         open={isAddDialogOpen}
         onOpenChange={setIsAddDialogOpen}
