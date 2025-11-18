@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Eye, Edit, Search, Loader2, AlertCircle, FileText, Clock, CheckSquare, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
@@ -649,17 +650,17 @@ const EmployeeTaskManagement = () => {
                 className="pl-10"
               />
             </div>
-            <Select value={clientFilter} onValueChange={setClientFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Client" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Clients</SelectItem>
-                {clients.map(client => (
-                  <SelectItem key={client} value={client}>{client}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={clientFilter}
+              onValueChange={setClientFilter}
+              placeholder="Client"
+              searchPlaceholder="Search clients..."
+              className="w-[150px]"
+              options={[
+                { value: "all", label: "All Clients" },
+                ...clients.map(client => ({ value: client, label: client }))
+              ]}
+            />
             <Select value={dueDateFilter} onValueChange={setDueDateFilter}>
               <SelectTrigger className="w-[150px]">
                 <SelectValue placeholder="Due date" />

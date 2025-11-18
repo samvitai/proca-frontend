@@ -26,6 +26,14 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Search, Loader2, Plus, Eye, ChevronDown, ChevronUp, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import axios, { AxiosError } from "axios";
 import AddClientDialog from "./AddClientDialog";
 import ViewClientDetailsDialog from "./ViewClientDetailsDialog";
@@ -281,6 +289,8 @@ const ClientManagement = () => {
   const [isViewDetailsOpen, setIsViewDetailsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isBulkUploadDialogOpen, setIsBulkUploadDialogOpen] = useState(false);
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -1115,9 +1125,60 @@ const ClientManagement = () => {
     }
   };
 
-  // Trigger file input click
+  // Trigger file input click - now opens dialog
   const handleUploadClick = () => {
-    fileInputRef.current?.click();
+    setIsBulkUploadDialogOpen(true);
+  };
+
+  // Download format function
+  const handleDownloadFormat = () => {
+    // CSV format with exact headers from clients-format.csv
+    const csvHeaders = [
+      "Client Code",
+      "Client Name",
+      "CIN/LLPIN",
+      "Date of Incorporation",
+      "Address",
+      "City",
+      "State",
+      "PIN Code",
+      "Country",
+      "GST Number",
+      "Phone/Mobile",
+      "Email ID",
+      "Status",
+      "Client type",
+      "Contact Person Name",
+      "His Role",
+      "Contact Email ID",
+      "Contact Phone/Mobile"
+    ];
+    
+    // Create CSV content with headers and empty rows for user to fill (matching clients-format.csv structure)
+    const emptyRow = ",".repeat(csvHeaders.length - 1);
+    const csvContent = csvHeaders.join(",") + "\n" + 
+                      emptyRow + "\n" +
+                      emptyRow + "\n";
+    
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute("href", url);
+    link.setAttribute("download", "clients-format.csv");
+    link.style.visibility = "hidden";
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "Format Downloaded",
+      description: "CSV format file has been downloaded. Please do not modify the header row.",
+    });
   };
 
   return (
@@ -1441,6 +1502,166 @@ const ClientManagement = () => {
         onUpdateClient={handleUpdateClient}
         isLoading={isLoading}
       />
+
+      {/* Bulk Upload Dialog */}
+      <Dialog
+        open={isBulkUploadDialogOpen}
+        onOpenChange={(open) => {
+          setIsBulkUploadDialogOpen(open);
+          if (!open) {
+            setBulkUploadFile(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Upload Clients</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file to bulk import clients. <strong>Important:</strong> Do not modify the header row. Only edit the data rows below the headers.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Select File</p>
+              <Input
+                type="file"
+                accept=".csv, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setBulkUploadFile(file);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Choose the bulk import template file provided for clients.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              onClick={handleDownloadFormat}
+              className="flex items-center gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Download Format
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsBulkUploadDialogOpen(false);
+                  setBulkUploadFile(null);
+                }}
+                disabled={isUploading}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!bulkUploadFile) {
+                    toast({
+                      title: "No file selected",
+                      description: "Please choose a file to upload.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  // Validate CSV headers before uploading
+                  let validatedFile: File = bulkUploadFile;
+                  try {
+                    const fileText = await bulkUploadFile.text();
+                    const lines = fileText.split('\n').filter(line => line.trim());
+                    if (lines.length === 0) {
+                      toast({
+                        title: "Invalid file",
+                        description: "The file appears to be empty.",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    
+                    const expectedHeaders = [
+                      "Client Code",
+                      "Client Name",
+                      "CIN/LLPIN",
+                      "Date of Incorporation",
+                      "Address",
+                      "City",
+                      "State",
+                      "PIN Code",
+                      "Country",
+                      "GST Number",
+                      "Phone/Mobile",
+                      "Email ID",
+                      "Status",
+                      "Client type",
+                      "Contact Person Name",
+                      "His Role",
+                      "Contact Email ID",
+                      "Contact Phone/Mobile"
+                    ];
+                    
+                    const fileHeaders = lines[0].split(',').map(h => h.trim());
+                    
+                    // Check if headers match (case-insensitive, but exact order)
+                    const headersMatch = expectedHeaders.length === fileHeaders.length &&
+                      expectedHeaders.every((header, index) => 
+                        header.toLowerCase() === fileHeaders[index]?.toLowerCase()
+                      );
+                    
+                    if (!headersMatch) {
+                      toast({
+                        title: "Invalid file format",
+                        description: "The CSV file headers do not match the expected format. Please download the format template and do not modify the header row.",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    
+                    // Create a new File from the validated text to ensure it can be uploaded
+                    validatedFile = new File([fileText], bulkUploadFile.name, {
+                      type: bulkUploadFile.type || 'text/csv',
+                      lastModified: bulkUploadFile.lastModified,
+                    });
+                  } catch (validationError) {
+                    toast({
+                      title: "File validation error",
+                      description: "Could not read the file. Please ensure it is a valid CSV file.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  try {
+                    setIsUploading(true);
+                    await handleBulkUpload(validatedFile);
+                    setIsBulkUploadDialogOpen(false);
+                    setBulkUploadFile(null);
+                  } catch (error) {
+                    // Error handling is done in handleBulkUpload
+                  } finally {
+                    setIsUploading(false);
+                  }
+                }}
+                disabled={isUploading}
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

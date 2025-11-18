@@ -36,6 +36,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Download,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import AddTaskDialog from "./AddTaskDialog";
@@ -666,6 +667,44 @@ const AdminTaskManagement = () => {
   const handleInvoiceGenerationSuccess = async () => {
     // Refresh all tasks from the backend to get updated invoice_pdf_url and other fields
     await fetchTasks();
+  };
+
+  const handleDownloadFormat = () => {
+    // CSV format with exact headers from tasks-format.csv
+    const csvHeaders = [
+      "Client Name",
+      "Task Name",
+      "Service Description",
+      "SAC Code",
+      "Service Category Name",
+      "Type of Delivery",
+      "Assigned to",
+      "Due Date",
+      "Invoice Amount"
+    ];
+    
+    // Create CSV content with headers only (empty row for user to fill)
+    const csvContent = csvHeaders.join(",") + "\n";
+    
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute("href", url);
+    link.setAttribute("download", "tasks-format.csv");
+    link.style.visibility = "hidden";
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "Format Downloaded",
+      description: "CSV format file has been downloaded. Please do not modify the header row.",
+    });
   };
 
   const handleDirectGenerateInvoice = async (task: Task) => {
@@ -1335,7 +1374,7 @@ const AdminTaskManagement = () => {
           <DialogHeader>
             <DialogTitle>Upload Projects</DialogTitle>
             <DialogDescription>
-              Upload a file to bulk import projects. Supported format will depend on backend configuration (e.g. CSV or Excel).
+              Upload a CSV file to bulk import projects. <strong>Important:</strong> Do not modify the header row. Only edit the data rows below the headers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -1354,19 +1393,28 @@ const AdminTaskManagement = () => {
               </p>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex items-center justify-between">
             <Button
               variant="outline"
-              onClick={() => {
-                setIsBulkUploadDialogOpen(false);
-                setBulkUploadFile(null);
-              }}
-              disabled={isBulkUploading}
+              onClick={handleDownloadFormat}
+              className="flex items-center gap-2"
             >
-              Cancel
+              <Download className="h-4 w-4" />
+              Download Format
             </Button>
-            <Button
-              onClick={async () => {
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsBulkUploadDialogOpen(false);
+                  setBulkUploadFile(null);
+                }}
+                disabled={isBulkUploading}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
                 if (!bulkUploadFile) {
                   toast({
                     title: "No file selected",
@@ -1376,10 +1424,67 @@ const AdminTaskManagement = () => {
                   return;
                 }
 
+                // Validate CSV headers before uploading
+                let validatedFile: File = bulkUploadFile;
+                try {
+                  const fileText = await bulkUploadFile.text();
+                  const lines = fileText.split('\n').filter(line => line.trim());
+                  if (lines.length === 0) {
+                    toast({
+                      title: "Invalid file",
+                      description: "The file appears to be empty.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  
+                  const expectedHeaders = [
+                    "Client Name",
+                    "Task Name",
+                    "Service Description",
+                    "SAC Code",
+                    "Service Category Name",
+                    "Type of Delivery",
+                    "Assigned to",
+                    "Due Date",
+                    "Invoice Amount"
+                  ];
+                  
+                  const fileHeaders = lines[0].split(',').map(h => h.trim());
+                  
+                  // Check if headers match (case-insensitive, but exact order)
+                  const headersMatch = expectedHeaders.length === fileHeaders.length &&
+                    expectedHeaders.every((header, index) => 
+                      header.toLowerCase() === fileHeaders[index]?.toLowerCase()
+                    );
+                  
+                  if (!headersMatch) {
+                    toast({
+                      title: "Invalid file format",
+                      description: "The CSV file headers do not match the expected format. Please download the format template and do not modify the header row.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  
+                  // Create a new File from the validated text to ensure it can be uploaded
+                  validatedFile = new File([fileText], bulkUploadFile.name, {
+                    type: bulkUploadFile.type || 'text/csv',
+                    lastModified: bulkUploadFile.lastModified,
+                  });
+                } catch (validationError) {
+                  toast({
+                    title: "File validation error",
+                    description: "Could not read the file. Please ensure it is a valid CSV file.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
                 try {
                   setIsBulkUploading(true);
                   const formData = new FormData();
-                  formData.append("file", bulkUploadFile);
+                  formData.append("file", validatedFile);
 
                   const response = await api.post(
                     "/api/public/bulk-import/tasks",
@@ -1657,6 +1762,7 @@ const AdminTaskManagement = () => {
                 </>
               )}
             </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
