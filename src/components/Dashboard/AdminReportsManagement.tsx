@@ -5,46 +5,32 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, BarChart3, Loader2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search, Download, BarChart3, Loader2, FileText } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { 
-  fetchTaskReport, 
-  fetchInvoiceRegisterReport,
-  fetchAgingReport,
-  fetchRevenueByClientReport,
-  fetchClientStatementReport,
-  exportReport,
-  type ReportTask,
-  type ReportFilters,
-  type InvoiceRegisterReport,
-  type AgingReport,
-  type RevenueByClientReport,
-  type ClientStatementReport
-} from "@/services/reportService";
+import { fetchTaskReport, TaskReport, fetchInvoiceReport, InvoiceReportItem, fetchCreditNoteReport, CreditNoteReportItem, fetchDebitNoteReport, DebitNoteReportItem } from "@/services/reportService";
 import { api } from "@/lib/utils";
-
-type ReportType = 'tasks' | 'invoice-register' | 'aging' | 'revenue-by-client' | 'client-statement';
+import { exportTasks, exportInvoices, exportCreditNotes, exportDebitNotes } from "@/lib/exportUtils";
 
 interface Client {
-  client_id: string;
-  client_name: string;
-  client_code: string;
-}
-
-interface User {
   id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
+  name: string;
 }
 
 interface ServiceCategory {
-  service_category_id: string;
-  service_category_name: string;
+  id: string;
+  name: string;
+}
+
+interface Assignee {
+  id: string;
+  name: string;
 }
 
 const AdminReportsManagement = () => {
-  const [reportType, setReportType] = useState<ReportType>('tasks');
+  const [activeTab, setActiveTab] = useState<"projects" | "invoices" | "credit-notes" | "debit-notes">("projects");
+  
+  // Project Reports State
   const [searchTerm, setSearchTerm] = useState("");
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<string>("all");
   const [workflowStatusFilter, setWorkflowStatusFilter] = useState<string>("all");
@@ -55,23 +41,9 @@ const AdminReportsManagement = () => {
   const [dueDateFrom, setDueDateFrom] = useState<string>("");
   const [dueDateTo, setDueDateTo] = useState<string>("");
   const [exportFormat, setExportFormat] = useState<string>("csv");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-
-  // Data states
-  const [tasks, setTasks] = useState<ReportTask[]>([]);
-  const [invoiceRegister, setInvoiceRegister] = useState<InvoiceRegisterReport[]>([]);
-  const [agingReport, setAgingReport] = useState<AgingReport[]>([]);
-  const [revenueByClient, setRevenueByClient] = useState<RevenueByClientReport[]>([]);
-  const [clientStatement, setClientStatement] = useState<ClientStatementReport | null>(null);
-
-  // Filter options
-  const [clients, setClients] = useState<Client[]>([]);
-  const [assignees, setAssignees] = useState<User[]>([]);
-  const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>([]);
-  const [selectedClientForStatement, setSelectedClientForStatement] = useState<string>("");
-
-  // Stats for task report
+  const [tasks, setTasks] = useState<TaskReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     assigned: 0,
@@ -79,298 +51,725 @@ const AdminReportsManagement = () => {
     overdue: 0
   });
 
+  // Invoice Reports State
+  const [invoiceSearchTerm, setInvoiceSearchTerm] = useState("");
+  const [invoiceClientFilter, setInvoiceClientFilter] = useState<string>("all");
+  const [invoiceServiceCategoryFilter, setInvoiceServiceCategoryFilter] = useState<string>("all");
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string>("all");
+  const [invoiceDateFrom, setInvoiceDateFrom] = useState<string>("");
+  const [invoiceDateTo, setInvoiceDateTo] = useState<string>("");
+  const [invoiceExportFormat, setInvoiceExportFormat] = useState<string>("csv");
+  const [invoices, setInvoices] = useState<InvoiceReportItem[]>([]);
+  const [invoiceLoading, setInvoiceLoading] = useState(true);
+  const [invoiceExporting, setInvoiceExporting] = useState(false);
+  const [invoiceStats, setInvoiceStats] = useState({
+    total_invoices: 0,
+    total_amount: 0,
+    paid_amount: 0,
+    outstanding_amount: 0
+  });
+
+  // Credit Notes Reports State
+  const [creditNoteSearchTerm, setCreditNoteSearchTerm] = useState("");
+  const [creditNoteClientFilter, setCreditNoteClientFilter] = useState<string>("all");
+  const [creditNoteStatusFilter, setCreditNoteStatusFilter] = useState<string>("all");
+  const [creditNoteDateFrom, setCreditNoteDateFrom] = useState<string>("");
+  const [creditNoteDateTo, setCreditNoteDateTo] = useState<string>("");
+  const [creditNoteExportFormat, setCreditNoteExportFormat] = useState<string>("csv");
+  const [creditNotes, setCreditNotes] = useState<CreditNoteReportItem[]>([]);
+  const [creditNoteLoading, setCreditNoteLoading] = useState(true);
+  const [creditNoteExporting, setCreditNoteExporting] = useState(false);
+  const [creditNoteStats, setCreditNoteStats] = useState({
+    total_credit_notes: 0,
+    total_amount: 0
+  });
+
+  // Debit Notes Reports State
+  const [debitNoteSearchTerm, setDebitNoteSearchTerm] = useState("");
+  const [debitNoteClientFilter, setDebitNoteClientFilter] = useState<string>("all");
+  const [debitNoteStatusFilter, setDebitNoteStatusFilter] = useState<string>("all");
+  const [debitNoteDateFrom, setDebitNoteDateFrom] = useState<string>("");
+  const [debitNoteDateTo, setDebitNoteDateTo] = useState<string>("");
+  const [debitNoteExportFormat, setDebitNoteExportFormat] = useState<string>("csv");
+  const [debitNotes, setDebitNotes] = useState<DebitNoteReportItem[]>([]);
+  const [debitNoteLoading, setDebitNoteLoading] = useState(true);
+  const [debitNoteExporting, setDebitNoteExporting] = useState(false);
+  const [debitNoteStats, setDebitNoteStats] = useState({
+    total_debit_notes: 0,
+    total_amount: 0,
+    paid_amount: 0,
+    outstanding_amount: 0
+  });
+
+  // Filter options
+  const [clients, setClients] = useState<Client[]>([]);
+  const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>([]);
+  const [assignees, setAssignees] = useState<Assignee[]>([]);
+
   // Fetch filter options
   useEffect(() => {
     const fetchFilterOptions = async () => {
       try {
         // Fetch clients
-        const clientsRes = await api.get("/api/clients/?is_active=true");
-        const clientsData = clientsRes.data?.data?.clients || [];
-        setClients(clientsData);
-
-        // Fetch users (for assignees)
-        const usersRes = await api.get("/api/v1/users/organization/users?role=USERS");
-        const usersData = usersRes.data || {};
-        const allUsers = [
-          ...(usersData.admin || []),
-          ...(usersData.supervisor || []),
-          ...(usersData.employee || []),
-        ].filter((user: User) => user.is_active);
-        setAssignees(allUsers);
+        const clientsResponse = await api.get('/api/clients/?is_active=true');
+        const clientsData = clientsResponse.data?.data?.clients || clientsResponse.data?.data || [];
+        if (Array.isArray(clientsData) && clientsData.length > 0) {
+          setClients(clientsData.map((c: any) => ({
+            id: String(c.client_id || c.id || ''),
+            name: c.client_name || c.company_name || c.name || 'Unknown Client'
+          })));
+        }
 
         // Fetch service categories
-        const categoriesRes = await api.get("/api/master/service-categories?is_active=true");
-        const categoriesData = categoriesRes.data?.data?.service_categories || [];
-        setServiceCategories(categoriesData);
-      } catch (error) {
+        const categoriesResponse = await api.get('/api/master/service-categories?is_active=true');
+        const categoriesData = categoriesResponse.data?.data?.service_categories 
+          || categoriesResponse.data?.data 
+          || (Array.isArray(categoriesResponse.data?.data) ? categoriesResponse.data.data : []);
+        if (Array.isArray(categoriesData) && categoriesData.length > 0) {
+          setServiceCategories(categoriesData.map((c: any) => ({
+            id: String(c.service_category_id || c.category_id || c.id || ''),
+            name: c.name || c.category_name || 'Unknown Category'
+          })));
+        }
+
+        // Fetch assignees (employees and supervisors)
+        const usersResponse = await api.get('/api/v1/users/organization/users?role=USERS');
+        const usersData = usersResponse.data || {};
+        const allUsers = [
+          ...(usersData.employee || []),
+          ...(usersData.supervisor || []),
+          ...(usersData.admin || [])
+        ].filter((user: any) => user.is_active !== false);
+        
+        if (allUsers.length > 0) {
+          setAssignees(allUsers.map((u: any) => ({
+            id: String(u.user_id || u.id || ''),
+            name: `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email || 'Unknown User'
+          })));
+        }
+      } catch (error: any) {
         console.error('Error fetching filter options:', error);
+        toast({
+          title: "Warning",
+          description: "Some filter options may not be available. " + (error.response?.data?.message || error.message || ""),
+          variant: "default",
+        });
       }
     };
 
     fetchFilterOptions();
   }, []);
 
-  // Reset data when report type changes
-  useEffect(() => {
-    setTasks([]);
-    setInvoiceRegister([]);
-    setAgingReport([]);
-    setRevenueByClient([]);
-    setClientStatement(null);
-    setStats({
-      total: 0,
-      assigned: 0,
-      completed: 0,
-      overdue: 0
-    });
-  }, [reportType]);
-
-  // Fetch report data
-  useEffect(() => {
-    if (reportType === 'client-statement' && !selectedClientForStatement) {
-      return; // Don't fetch if no client selected
+  // Helper function to extract numeric ID from string IDs like "client_220"
+  const extractNumericId = (id: string): number | string => {
+    if (!id || id === "all") return id;
+    
+    // If it's already a number, return as is
+    if (/^\d+$/.test(id)) {
+      return parseInt(id, 10);
     }
+    
+    // If it contains "client_", extract the numeric part
+    if (id.startsWith('client_')) {
+      const numericPart = id.replace('client_', '');
+      const parsed = parseInt(numericPart, 10);
+      return isNaN(parsed) ? id : parsed;
+    }
+    
+    // If it contains other prefixes, try to extract numeric part
+    const match = id.match(/(\d+)$/);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      return isNaN(parsed) ? id : parsed;
+    }
+    
+    // Fallback: return as is
+    return id;
+  };
 
-    const loadReport = async () => {
-      setIsLoading(true);
+  // Fetch tasks report
+  useEffect(() => {
+    const loadTaskReport = async () => {
+      setLoading(true);
       try {
-        switch (reportType) {
-          case 'tasks':
-            await loadTaskReport();
-            break;
-          case 'invoice-register':
-            await loadInvoiceRegisterReport();
-            break;
-          case 'aging':
-            await loadAgingReport();
-            break;
-          case 'revenue-by-client':
-            await loadRevenueByClientReport();
-            break;
-          case 'client-statement':
-            if (selectedClientForStatement) {
-              await loadClientStatementReport();
-            }
-            break;
+        const params: any = {};
+        
+        if (assignmentStatusFilter !== "all") {
+          params.assignment_status = assignmentStatusFilter;
         }
-      } catch (error) {
-        console.error('Error loading report:', error);
+        if (workflowStatusFilter !== "all") {
+          params.workflow_status = workflowStatusFilter;
+        }
+        if (workflowStatusGroupFilter !== "all") {
+          params.status_group = workflowStatusGroupFilter;
+        }
+        if (assigneeFilter !== "all") {
+          params.assignee_id = extractNumericId(assigneeFilter);
+        }
+        if (clientFilter !== "all") {
+          params.client_id = extractNumericId(clientFilter);
+        }
+        if (serviceCategoryFilter !== "all") {
+          params.service_category_id = extractNumericId(serviceCategoryFilter);
+        }
+        
+        // Validate and add date filters
+        // Trim and validate date strings to ensure they're not empty
+        const trimmedFromDate = (dueDateFrom || '').trim();
+        const trimmedToDate = (dueDateTo || '').trim();
+        
+        // Date format regex - only validate complete dates
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        
+        // Check if dates are complete and valid before validating
+        const isFromDateComplete = trimmedFromDate && dateRegex.test(trimmedFromDate);
+        const isToDateComplete = trimmedToDate && dateRegex.test(trimmedToDate);
+        
+        if (isFromDateComplete && isToDateComplete) {
+          // Both dates are complete - validate range
+          // Compare date strings directly (YYYY-MM-DD format from input type="date")
+          // This avoids timezone issues
+          if (trimmedToDate < trimmedFromDate) {
+            toast({
+              title: "Invalid Date Range",
+              description: "The 'To' date must be after or equal to the 'From' date. Please adjust your date range.",
+              variant: "destructive",
+            });
+            setLoading(false);
+            return;
+          }
+          
+          // Both dates are valid and complete - send them
+          params.due_date_from = trimmedFromDate;
+          params.due_date_to = trimmedToDate;
+        } else if (isFromDateComplete) {
+          // Only from date is complete and valid
+          params.due_date_from = trimmedFromDate;
+          // Don't validate or send incomplete to date
+        } else if (isToDateComplete) {
+          // Only to date is complete and valid
+          params.due_date_to = trimmedToDate;
+          // Don't validate or send incomplete from date
+        }
+        // If dates are incomplete (user still typing), don't validate or send them
+        // This prevents errors while user is entering dates
+        
+        if (searchTerm) {
+          params.search = searchTerm;
+        }
+
+        const result = await fetchTaskReport(params);
+        setTasks(result.tasks);
+        
+        // Calculate stats from tasks if summary is not available or incomplete
+        const calculatedStats = {
+          total: result.tasks.length,
+          assigned: result.tasks.filter(t => t.assignment_status === 'assigned').length,
+          completed: result.tasks.filter(t => t.status_group === 'completed').length,
+          overdue: result.tasks.filter(t => {
+            if (t.status_group !== 'pending' || !t.due_date) return false;
+            const dueDate = new Date(t.due_date);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            dueDate.setHours(0, 0, 0, 0);
+            return dueDate < today;
+          }).length
+        };
+        
+        // Use API summary if available, otherwise use calculated stats
+        setStats({
+          total: result.summary?.total_projects ?? calculatedStats.total,
+          assigned: result.summary?.assigned ?? calculatedStats.assigned,
+          completed: result.summary?.completed ?? calculatedStats.completed,
+          overdue: result.summary?.overdue ?? calculatedStats.overdue
+        });
+      } catch (error: any) {
+        console.error('Error loading task report:', error);
+        
+        // Extract error message
+        const errorMessage = error.response?.data?.message || 
+                           error.response?.data?.error || 
+                           error.message || 
+                           "Failed to load task report";
+        
+        // Check if it's a date validation error
+        const errorMessageLower = errorMessage.toLowerCase();
+        const isDateValidationError = 
+          errorMessageLower.includes('due_date') ||
+          errorMessageLower.includes('date') && (
+            errorMessageLower.includes('invalid') ||
+            errorMessageLower.includes('format') ||
+            errorMessageLower.includes('after') ||
+            errorMessageLower.includes('before') ||
+            errorMessageLower.includes('range')
+          );
+        
         toast({
-          title: "Error",
-          description: "Failed to load report data. Please try again.",
+          title: isDateValidationError ? "Date Filter Error" : "Error",
+          description: isDateValidationError 
+            ? `Date filter error: ${errorMessage}. Please check your date range and try again.`
+            : errorMessage,
           variant: "destructive",
         });
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
 
-    loadReport();
-  }, [reportType, selectedClientForStatement, assignmentStatusFilter, workflowStatusFilter, 
-      workflowStatusGroupFilter, assigneeFilter, clientFilter, serviceCategoryFilter, 
-      dueDateFrom, dueDateTo, searchTerm]);
+    loadTaskReport();
+  }, [
+    assignmentStatusFilter,
+    workflowStatusFilter,
+    workflowStatusGroupFilter,
+    assigneeFilter,
+    clientFilter,
+    serviceCategoryFilter,
+    dueDateFrom,
+    dueDateTo,
+    searchTerm
+  ]);
 
-  const loadTaskReport = async () => {
-    try {
-      const filters: ReportFilters = {
-        assignmentStatus: assignmentStatusFilter as any,
-        workflowStatus: workflowStatusFilter as any,
-        workflowStatusGroup: workflowStatusGroupFilter as any,
-        assigneeId: assigneeFilter !== 'all' ? assigneeFilter : undefined,
-        clientId: clientFilter !== 'all' ? clientFilter : undefined,
-        serviceCategoryId: serviceCategoryFilter !== 'all' ? serviceCategoryFilter : undefined,
-        dueDateFrom: dueDateFrom || undefined,
-        dueDateTo: dueDateTo || undefined,
-        search: searchTerm || undefined,
-      };
+  // Fetch invoice reports
+  useEffect(() => {
+    const loadInvoiceReport = async () => {
+      setInvoiceLoading(true);
+      try {
+        const params: any = {};
+        
+        if (invoiceClientFilter !== "all") {
+          params.client_id = extractNumericId(invoiceClientFilter);
+        }
+        if (invoiceServiceCategoryFilter !== "all") {
+          params.service_category_id = extractNumericId(invoiceServiceCategoryFilter);
+        }
+        if (invoiceStatusFilter !== "all") {
+          params.status = invoiceStatusFilter;
+        }
+        
+        // Validate and add date filters
+        const trimmedFromDate = (invoiceDateFrom || '').trim();
+        const trimmedToDate = (invoiceDateTo || '').trim();
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        
+        const isFromDateComplete = trimmedFromDate && dateRegex.test(trimmedFromDate);
+        const isToDateComplete = trimmedToDate && dateRegex.test(trimmedToDate);
+        
+        if (isFromDateComplete && isToDateComplete) {
+          if (trimmedToDate < trimmedFromDate) {
+            toast({
+              title: "Invalid Date Range",
+              description: "The 'To' date must be after or equal to the 'From' date. Please adjust your date range.",
+              variant: "destructive",
+            });
+            setInvoiceLoading(false);
+            return;
+          }
+          params.date_from = trimmedFromDate;
+          params.date_to = trimmedToDate;
+        } else if (isFromDateComplete) {
+          params.date_from = trimmedFromDate;
+        } else if (isToDateComplete) {
+          params.date_to = trimmedToDate;
+        }
+        
+        if (invoiceSearchTerm) {
+          params.search = invoiceSearchTerm;
+        }
 
-      const response = await fetchTaskReport(filters);
-      
-      // Ensure we have an array
-      const taskList: ReportTask[] = Array.isArray(response.data) ? response.data : [];
-      
-      setTasks(taskList);
-      
-      // Calculate stats - ensure taskList is an array
-      if (Array.isArray(taskList)) {
-        setStats({
-          total: taskList.length,
-          assigned: taskList.filter(t => t.assignmentStatus === 'assigned').length,
-          completed: taskList.filter(t => t.workflowStatusGroup === 'completed').length,
-          overdue: taskList.filter(t => {
-            const dueDate = new Date(t.dueDate);
-            const now = new Date();
-            return dueDate < now && t.workflowStatusGroup === 'pending';
-          }).length
+        const result = await fetchInvoiceReport(params);
+        setInvoices(result.invoices);
+        setInvoiceStats(result.summary);
+      } catch (error: any) {
+        console.error('Error loading invoice report:', error);
+        const errorMessage = error.response?.data?.message || 
+                           error.response?.data?.error || 
+                           error.message || 
+                           "Failed to load invoice report";
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
         });
-      } else {
-        setStats({
-          total: 0,
-          assigned: 0,
-          completed: 0,
-          overdue: 0
-        });
+      } finally {
+        setInvoiceLoading(false);
       }
-    } catch (error) {
-      console.error('Error loading task report:', error);
-      setTasks([]);
-      setStats({
-        total: 0,
-        assigned: 0,
-        completed: 0,
-        overdue: 0
-      });
-      throw error;
-    }
-  };
+    };
 
-  const loadInvoiceRegisterReport = async () => {
-    try {
-      const filters = {
-        clientId: clientFilter !== 'all' ? clientFilter : undefined,
-        dateFrom: dueDateFrom || undefined,
-        dateTo: dueDateTo || undefined,
-      };
-      const response = await fetchInvoiceRegisterReport(filters);
-      const data: InvoiceRegisterReport[] = Array.isArray(response.data) ? response.data : [];
-      setInvoiceRegister(data);
-    } catch (error) {
-      console.error('Error loading invoice register report:', error);
-      setInvoiceRegister([]);
-      throw error;
+    if (activeTab === "invoices") {
+      loadInvoiceReport();
     }
-  };
+  }, [
+    activeTab,
+    invoiceClientFilter,
+    invoiceServiceCategoryFilter,
+    invoiceStatusFilter,
+    invoiceDateFrom,
+    invoiceDateTo,
+    invoiceSearchTerm
+  ]);
 
-  const loadAgingReport = async () => {
-    try {
-      const filters = {
-        clientId: clientFilter !== 'all' ? clientFilter : undefined,
-        asOfDate: dueDateTo || undefined,
-      };
-      const response = await fetchAgingReport(filters);
-      const data: AgingReport[] = Array.isArray(response.data) ? response.data : [];
-      setAgingReport(data);
-    } catch (error) {
-      console.error('Error loading aging report:', error);
-      setAgingReport([]);
-      throw error;
-    }
-  };
+  const filteredTasks = tasks.filter(task => {
+    const matchesSearch = !searchTerm || 
+      task.project_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      task.client.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return matchesSearch;
+  });
 
-  const loadRevenueByClientReport = async () => {
-    try {
-      const filters = {
-        dateFrom: dueDateFrom || undefined,
-        dateTo: dueDateTo || undefined,
-        clientId: clientFilter !== 'all' ? clientFilter : undefined,
-      };
-      const response = await fetchRevenueByClientReport(filters);
-      const data: RevenueByClientReport[] = Array.isArray(response.data) ? response.data : [];
-      setRevenueByClient(data);
-    } catch (error) {
-      console.error('Error loading revenue by client report:', error);
-      setRevenueByClient([]);
-      throw error;
-    }
-  };
+  // Fetch credit note reports
+  useEffect(() => {
+    const loadCreditNoteReport = async () => {
+      setCreditNoteLoading(true);
+      try {
+        const params: any = {};
+        
+        if (creditNoteClientFilter !== "all") {
+          params.client_id = extractNumericId(creditNoteClientFilter);
+        }
+        if (creditNoteStatusFilter !== "all") {
+          params.status = creditNoteStatusFilter;
+        }
+        
+        const trimmedFromDate = (creditNoteDateFrom || '').trim();
+        const trimmedToDate = (creditNoteDateTo || '').trim();
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        
+        const isFromDateComplete = trimmedFromDate && dateRegex.test(trimmedFromDate);
+        const isToDateComplete = trimmedToDate && dateRegex.test(trimmedToDate);
+        
+        if (isFromDateComplete && isToDateComplete) {
+          if (trimmedToDate < trimmedFromDate) {
+            toast({
+              title: "Invalid Date Range",
+              description: "The 'To' date must be after or equal to the 'From' date.",
+              variant: "destructive",
+            });
+            setCreditNoteLoading(false);
+            return;
+          }
+          params.date_from = trimmedFromDate;
+          params.date_to = trimmedToDate;
+        } else if (isFromDateComplete) {
+          params.date_from = trimmedFromDate;
+        } else if (isToDateComplete) {
+          params.date_to = trimmedToDate;
+        }
+        
+        if (creditNoteSearchTerm) {
+          params.search = creditNoteSearchTerm;
+        }
 
-  const loadClientStatementReport = async () => {
-    try {
-      const filters = {
-        dateFrom: dueDateFrom || undefined,
-        dateTo: dueDateTo || undefined,
-      };
-      const response = await fetchClientStatementReport(selectedClientForStatement, filters);
-      setClientStatement(response.data || null);
-    } catch (error) {
-      console.error('Error loading client statement report:', error);
-      throw error;
+        const result = await fetchCreditNoteReport(params);
+        setCreditNotes(result.credit_notes);
+        setCreditNoteStats(result.summary);
+      } catch (error: any) {
+        console.error('Error loading credit note report:', error);
+        const errorMessage = error.response?.data?.message || 
+                           error.response?.data?.error || 
+                           error.message || 
+                           "Failed to load credit note report";
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      } finally {
+        setCreditNoteLoading(false);
+      }
+    };
+
+    if (activeTab === "credit-notes") {
+      loadCreditNoteReport();
     }
-  };
+  }, [
+    activeTab,
+    creditNoteClientFilter,
+    creditNoteStatusFilter,
+    creditNoteDateFrom,
+    creditNoteDateTo,
+    creditNoteSearchTerm
+  ]);
+
+  // Fetch debit note reports
+  useEffect(() => {
+    const loadDebitNoteReport = async () => {
+      setDebitNoteLoading(true);
+      try {
+        const params: any = {};
+        
+        if (debitNoteClientFilter !== "all") {
+          params.client_id = extractNumericId(debitNoteClientFilter);
+        }
+        if (debitNoteStatusFilter !== "all") {
+          params.status = debitNoteStatusFilter;
+        }
+        
+        const trimmedFromDate = (debitNoteDateFrom || '').trim();
+        const trimmedToDate = (debitNoteDateTo || '').trim();
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        
+        const isFromDateComplete = trimmedFromDate && dateRegex.test(trimmedFromDate);
+        const isToDateComplete = trimmedToDate && dateRegex.test(trimmedToDate);
+        
+        if (isFromDateComplete && isToDateComplete) {
+          if (trimmedToDate < trimmedFromDate) {
+            toast({
+              title: "Invalid Date Range",
+              description: "The 'To' date must be after or equal to the 'From' date.",
+              variant: "destructive",
+            });
+            setDebitNoteLoading(false);
+            return;
+          }
+          params.date_from = trimmedFromDate;
+          params.date_to = trimmedToDate;
+        } else if (isFromDateComplete) {
+          params.date_from = trimmedFromDate;
+        } else if (isToDateComplete) {
+          params.date_to = trimmedToDate;
+        }
+        
+        if (debitNoteSearchTerm) {
+          params.search = debitNoteSearchTerm;
+        }
+
+        const result = await fetchDebitNoteReport(params);
+        setDebitNotes(result.debit_notes);
+        setDebitNoteStats(result.summary);
+      } catch (error: any) {
+        console.error('Error loading debit note report:', error);
+        const errorMessage = error.response?.data?.message || 
+                           error.response?.data?.error || 
+                           error.message || 
+                           "Failed to load debit note report";
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      } finally {
+        setDebitNoteLoading(false);
+      }
+    };
+
+    if (activeTab === "debit-notes") {
+      loadDebitNoteReport();
+    }
+  }, [
+    activeTab,
+    debitNoteClientFilter,
+    debitNoteStatusFilter,
+    debitNoteDateFrom,
+    debitNoteDateTo,
+    debitNoteSearchTerm
+  ]);
+
+  const filteredInvoices = invoices.filter(invoice => {
+    const matchesSearch = !invoiceSearchTerm || 
+      invoice.invoice_number.toLowerCase().includes(invoiceSearchTerm.toLowerCase()) ||
+      invoice.client_name.toLowerCase().includes(invoiceSearchTerm.toLowerCase()) ||
+      invoice.task_name.toLowerCase().includes(invoiceSearchTerm.toLowerCase());
+    
+    return matchesSearch;
+  });
+
+  const filteredCreditNotes = creditNotes.filter(note => {
+    const matchesSearch = !creditNoteSearchTerm || 
+      note.credit_note_number.toLowerCase().includes(creditNoteSearchTerm.toLowerCase()) ||
+      note.invoice_number.toLowerCase().includes(creditNoteSearchTerm.toLowerCase()) ||
+      note.client_name.toLowerCase().includes(creditNoteSearchTerm.toLowerCase());
+    
+    return matchesSearch;
+  });
+
+  const filteredDebitNotes = debitNotes.filter(note => {
+    const matchesSearch = !debitNoteSearchTerm || 
+      note.debit_note_number.toLowerCase().includes(debitNoteSearchTerm.toLowerCase()) ||
+      note.client_name.toLowerCase().includes(debitNoteSearchTerm.toLowerCase()) ||
+      note.description.toLowerCase().includes(debitNoteSearchTerm.toLowerCase());
+    
+    return matchesSearch;
+  });
 
   const handleExport = async () => {
-    setIsExporting(true);
+    setExporting(true);
     try {
-      let filters: any = {};
-      
-      if (reportType === 'tasks') {
-        filters = {
-          assignmentStatus: assignmentStatusFilter,
-          workflowStatus: workflowStatusFilter,
-          workflowStatusGroup: workflowStatusGroupFilter,
-          assigneeId: assigneeFilter !== 'all' ? assigneeFilter : undefined,
-          clientId: clientFilter !== 'all' ? clientFilter : undefined,
-          serviceCategoryId: serviceCategoryFilter !== 'all' ? serviceCategoryFilter : undefined,
-          dueDateFrom: dueDateFrom || undefined,
-          dueDateTo: dueDateTo || undefined,
-          search: searchTerm || undefined,
-        };
-      } else if (reportType === 'invoice-register') {
-        filters = {
-          clientId: clientFilter !== 'all' ? clientFilter : undefined,
-          dateFrom: dueDateFrom || undefined,
-          dateTo: dueDateTo || undefined,
-        };
-      } else if (reportType === 'aging') {
-        filters = {
-          clientId: clientFilter !== 'all' ? clientFilter : undefined,
-          asOfDate: dueDateTo || undefined,
-        };
-      } else if (reportType === 'revenue-by-client') {
-        filters = {
-          dateFrom: dueDateFrom || undefined,
-          dateTo: dueDateTo || undefined,
-          clientId: clientFilter !== 'all' ? clientFilter : undefined,
-        };
-      } else if (reportType === 'client-statement') {
-        filters = {
-          dateFrom: dueDateFrom || undefined,
-          dateTo: dueDateTo || undefined,
-        };
+      // Export only the filtered tasks that are currently displayed in the table
+      // filteredTasks already includes all applied filters (from API) + search term filter
+      if (filteredTasks.length === 0) {
+        toast({
+          title: "No Data to Export",
+          description: "There are no tasks to export with the current filters.",
+          variant: "default",
+        });
+        setExporting(false);
+        return;
       }
 
-      const blob = await exportReport(
-        reportType,
-        exportFormat as 'xlsx' | 'csv',
-        filters,
-        reportType === 'client-statement' ? selectedClientForStatement : undefined
+      // Fetch comments and updated_at for tasks that don't already have them
+      const tasksWithComments = await Promise.all(
+        filteredTasks.map(async (task) => {
+          // If task already has both comments and updated_at, use them
+          if (task.comments && task.updated_at) {
+            return task;
+          }
+
+          // Otherwise, fetch task details from the API
+          try {
+            const response = await api.get(`/api/tasks/${task.id}`);
+            if (response.data?.success && response.data?.data) {
+              const taskData = response.data.data;
+              const updatedTask: TaskReport = { ...task };
+
+              // Fetch updated_at if not already present
+              if (!task.updated_at && (taskData.updated_at || taskData.updated_date)) {
+                updatedTask.updated_at = taskData.updated_at || taskData.updated_date;
+              }
+
+              // Fetch comments if not already present
+              if (!task.comments && taskData.comments && Array.isArray(taskData.comments)) {
+                const comments = taskData.comments;
+                const commentsText = comments
+                  .map((comment: any) => {
+                    const text = comment.comment_text || comment.content || '';
+                    const author = comment.user_name || comment.author || 'Unknown';
+                    const date = comment.created_at || comment.timestamp || '';
+                    return `[${author}${date ? ' - ' + new Date(date).toLocaleDateString() : ''}]: ${text}`;
+                  })
+                  .join(' | ');
+                
+                updatedTask.comments = commentsText || undefined;
+              }
+              
+              return updatedTask;
+            }
+          } catch (error) {
+            console.error(`Error fetching details for task ${task.id}:`, error);
+            // Continue with task without comments/updated_at if fetch fails
+          }
+          
+          return task;
+        })
       );
 
-      // Download the file
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${reportType}-report.${exportFormat}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      exportTasks(tasksWithComments, exportFormat as 'csv' | 'xlsx', 'task-report');
 
       toast({
         title: "Export Successful",
-        description: `Report exported as ${exportFormat.toUpperCase()}`,
+        description: `Exported ${filteredTasks.length} tasks as ${exportFormat.toUpperCase()}`,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error exporting report:', error);
       toast({
         title: "Export Failed",
-        description: "Failed to export report. Please try again.",
+        description: error.message || "Failed to export report",
         variant: "destructive",
       });
     } finally {
-      setIsExporting(false);
+      setExporting(false);
     }
   };
 
-  const getWorkflowStatusBadge = (status: ReportTask['workflowStatus'] | undefined) => {
-    if (!status) {
-      return (
-        <Badge className="bg-gray-400">
-          Unknown
-        </Badge>
-      );
-    }
+  const handleInvoiceExport = async () => {
+    setInvoiceExporting(true);
+    try {
+      // Export only the filtered invoices that are currently displayed in the table
+      // filteredInvoices already includes all applied filters (from API) + search term filter
+      if (filteredInvoices.length === 0) {
+        toast({
+          title: "No Data to Export",
+          description: "There are no invoices to export with the current filters.",
+          variant: "default",
+        });
+        setInvoiceExporting(false);
+        return;
+      }
 
+      exportInvoices(filteredInvoices, invoiceExportFormat as 'csv' | 'xlsx', 'invoice-report');
+
+      toast({
+        title: "Export Successful",
+        description: `Exported ${filteredInvoices.length} invoices as ${invoiceExportFormat.toUpperCase()}`,
+      });
+    } catch (error: any) {
+      console.error('Error exporting invoice report:', error);
+      toast({
+        title: "Export Failed",
+        description: error.message || "Failed to export invoice report",
+        variant: "destructive",
+      });
+    } finally {
+      setInvoiceExporting(false);
+    }
+  };
+
+  const handleCreditNoteExport = async () => {
+    setCreditNoteExporting(true);
+    try {
+      // Export only the filtered credit notes that are currently displayed in the table
+      // filteredCreditNotes already includes all applied filters (from API) + search term filter
+      if (filteredCreditNotes.length === 0) {
+        toast({
+          title: "No Data to Export",
+          description: "There are no credit notes to export with the current filters.",
+          variant: "default",
+        });
+        setCreditNoteExporting(false);
+        return;
+      }
+
+      exportCreditNotes(filteredCreditNotes, creditNoteExportFormat as 'csv' | 'xlsx', 'credit-note-report');
+
+      toast({
+        title: "Export Successful",
+        description: `Exported ${filteredCreditNotes.length} credit notes as ${creditNoteExportFormat.toUpperCase()}`,
+      });
+    } catch (error: any) {
+      console.error('Error exporting credit note report:', error);
+      toast({
+        title: "Export Failed",
+        description: error.message || "Failed to export credit note report",
+        variant: "destructive",
+      });
+    } finally {
+      setCreditNoteExporting(false);
+    }
+  };
+
+  const handleDebitNoteExport = async () => {
+    setDebitNoteExporting(true);
+    try {
+      // Export only the filtered debit notes that are currently displayed in the table
+      // filteredDebitNotes already includes all applied filters (from API) + search term filter
+      if (filteredDebitNotes.length === 0) {
+        toast({
+          title: "No Data to Export",
+          description: "There are no debit notes to export with the current filters.",
+          variant: "default",
+        });
+        setDebitNoteExporting(false);
+        return;
+      }
+
+      exportDebitNotes(filteredDebitNotes, debitNoteExportFormat as 'csv' | 'xlsx', 'debit-note-report');
+
+      toast({
+        title: "Export Successful",
+        description: `Exported ${filteredDebitNotes.length} debit notes as ${debitNoteExportFormat.toUpperCase()}`,
+      });
+    } catch (error: any) {
+      console.error('Error exporting debit note report:', error);
+      toast({
+        title: "Export Failed",
+        description: error.message || "Failed to export debit note report",
+        variant: "destructive",
+      });
+    } finally {
+      setDebitNoteExporting(false);
+    }
+  };
+
+  const getWorkflowStatusBadge = (status: TaskReport['workflow_status']) => {
     const colors: Record<string, string> = {
       'open': 'bg-gray-500',
       'in_progress': 'bg-blue-500',
@@ -379,595 +778,922 @@ const AdminReportsManagement = () => {
     };
 
     return (
-      <Badge className={colors[status]}>
+      <Badge className={colors[status] || 'bg-gray-500'}>
         {status.replace('_', ' ')}
       </Badge>
     );
   };
 
-  const getAssignmentStatusBadge = (status: ReportTask['assignmentStatus'] | undefined) => {
-    const label = status ? status.replace('_', ' ') : 'Not Assigned';
-
+  const getAssignmentStatusBadge = (status: TaskReport['assignment_status']) => {
     return (
       <Badge variant={status === 'assigned' ? 'default' : 'secondary'}>
-        {label}
+        {status.replace('_', ' ')}
       </Badge>
     );
   };
 
-  const getWorkflowStatusGroupBadge = (group: ReportTask['workflowStatusGroup'] | undefined) => {
-    const label = group || 'Pending';
-
+  const getWorkflowStatusGroupBadge = (group: TaskReport['status_group']) => {
     return (
-      <Badge
-        variant={group === 'completed' ? 'default' : 'secondary'}
+      <Badge 
+        variant={group === 'completed' ? 'default' : 'secondary'} 
         className={group === 'completed' ? 'bg-green-500' : 'bg-orange-500'}
       >
-        {label}
+        {group}
       </Badge>
     );
   };
 
-  // Filter tasks based on search (client-side filtering for search term)
-  const filteredTasks = Array.isArray(tasks) ? tasks.filter(task => {
-    if (!searchTerm) return true;
-    const searchLower = searchTerm.toLowerCase();
+  const getInvoiceStatusBadge = (status: string) => {
+    const statusLower = status.toLowerCase();
+    const colors: Record<string, string> = {
+      'paid': 'bg-green-500',
+      'unpaid': 'bg-red-500',
+      'partial': 'bg-yellow-500',
+      'overdue': 'bg-orange-500'
+    };
+
     return (
-      task.name.toLowerCase().includes(searchLower) ||
-      task.client.toLowerCase().includes(searchLower) ||
-      (task.description && task.description.toLowerCase().includes(searchLower))
+      <Badge className={colors[statusLower] || 'bg-gray-500'}>
+        {status}
+      </Badge>
     );
-  }) : [];
+  };
+
+  const getCreditNoteStatusBadge = (status: string | undefined) => {
+    if (!status) {
+      return (
+        <Badge className="bg-gray-500">
+          N/A
+        </Badge>
+      );
+    }
+    const statusLower = status.toLowerCase();
+    const colors: Record<string, string> = {
+      'active': 'bg-green-500',
+      'cancelled': 'bg-red-500',
+      'pending': 'bg-yellow-500'
+    };
+
+    return (
+      <Badge className={colors[statusLower] || 'bg-gray-500'}>
+        {status}
+      </Badge>
+    );
+  };
+
+  const getDebitNoteStatusBadge = (status: string | undefined) => {
+    if (!status) {
+      return (
+        <Badge className="bg-gray-500">
+          N/A
+        </Badge>
+      );
+    }
+    const statusLower = status.toLowerCase();
+    const colors: Record<string, string> = {
+      'paid': 'bg-green-500',
+      'unpaid': 'bg-red-500',
+      'partial': 'bg-yellow-500',
+      'overdue': 'bg-orange-500'
+    };
+
+    return (
+      <Badge className={colors[statusLower] || 'bg-gray-500'}>
+        {status}
+      </Badge>
+    );
+  };
 
   return (
     <div className="space-y-6">
-      {/* Report Type Selector */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium">Report Type:</label>
-            <Select value={reportType} onValueChange={(value) => setReportType(value as ReportType)}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue />
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "projects" | "invoices" | "credit-notes" | "debit-notes")}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="projects">Project Reports</TabsTrigger>
+          <TabsTrigger value="invoices">Invoice Reports</TabsTrigger>
+          <TabsTrigger value="credit-notes">Credit Notes</TabsTrigger>
+          <TabsTrigger value="debit-notes">Debit Notes</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="projects" className="space-y-6">
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-ca-accent/10 rounded-lg flex items-center justify-center">
+                    <BarChart3 className="h-6 w-6 text-ca-accent" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Projects</p>
+                    <p className="text-2xl font-bold text-ca-primary">{stats.total ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <BarChart3 className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Assigned</p>
+                    <p className="text-2xl font-bold text-ca-primary">{stats.assigned ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                    <BarChart3 className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Completed</p>
+                    <p className="text-2xl font-bold text-ca-primary">{stats.completed ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                    <BarChart3 className="h-6 w-6 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Overdue</p>
+                    <p className="text-2xl font-bold text-ca-primary">{stats.overdue ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Project Reports</CardTitle>
+                <div className="flex gap-2">
+                  <Select value={exportFormat} onValueChange={setExportFormat}>
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="xlsx">XLSX</SelectItem>
+                      <SelectItem value="csv">CSV</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={handleExport} disabled={exporting}>
+                    {exporting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Export
+                  </Button>
+                </div>
+              </div>
+          
+          {/* Filters */}
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                placeholder="Search Project..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            
+            <Select value={assignmentStatusFilter} onValueChange={setAssignmentStatusFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Assignment Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="tasks">Task Report</SelectItem>
-                <SelectItem value="invoice-register">Invoice Register</SelectItem>
-                <SelectItem value="aging">Aging Report (Receivables)</SelectItem>
-                <SelectItem value="revenue-by-client">Revenue by Client</SelectItem>
-                <SelectItem value="client-statement">Client Statement</SelectItem>
+                <SelectItem value="all">All Assignment</SelectItem>
+                <SelectItem value="assigned">Assigned</SelectItem>
+                <SelectItem value="not_assigned">Not Assigned</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={workflowStatusFilter} onValueChange={setWorkflowStatusFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Workflow Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Workflow</SelectItem>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="in_review">In Review</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={workflowStatusGroupFilter} onValueChange={setWorkflowStatusGroupFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Status Group" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Groups</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Assignee" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Assignees</SelectItem>
+                {assignees.map(assignee => (
+                  <SelectItem key={assignee.id} value={assignee.id}>{assignee.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Statistics Cards - Only for Task Report */}
-      {reportType === 'tasks' && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-ca-accent/10 rounded-lg flex items-center justify-center">
-                  <BarChart3 className="h-6 w-6 text-ca-accent" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Projects</p>
-                  <p className="text-2xl font-bold text-ca-primary">{stats.total}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+            <Select value={clientFilter} onValueChange={setClientFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Client" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Clients</SelectItem>
+                {clients.map(client => (
+                  <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={serviceCategoryFilter} onValueChange={setServiceCategoryFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Service Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {serviceCategories.map(category => (
+                  <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="col-span-1 md:col-span-2 lg:col-span-1">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-muted-foreground">Due Date Range</label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    value={dueDateFrom}
+                    onChange={(e) => setDueDateFrom(e.target.value)}
+                    placeholder="From"
+                    className="flex-1"
+                  />
+                  <span className="text-muted-foreground text-sm">to</span>
+                  <Input
+                    type="date"
+                    value={dueDateTo}
+                    onChange={(e) => setDueDateTo(e.target.value)}
+                    placeholder="To"
+                    className="flex-1"
+                  />
                 </div>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <BarChart3 className="h-6 w-6 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Assigned</p>
-                  <p className="text-2xl font-bold text-ca-primary">{stats.assigned}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <BarChart3 className="h-6 w-6 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Completed</p>
-                  <p className="text-2xl font-bold text-ca-primary">{stats.completed}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                  <BarChart3 className="h-6 w-6 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Overdue</p>
-                  <p className="text-2xl font-bold text-ca-primary">{stats.overdue}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle>
-              {reportType === 'tasks' && 'Project Reports'}
-              {reportType === 'invoice-register' && 'Invoice Register Report'}
-              {reportType === 'aging' && 'Aging Report (Receivables)'}
-              {reportType === 'revenue-by-client' && 'Revenue by Client Report'}
-              {reportType === 'client-statement' && 'Client Statement Report'}
-            </CardTitle>
-            <div className="flex gap-2">
-              <Select value={exportFormat} onValueChange={setExportFormat}>
-                <SelectTrigger className="w-[100px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="xlsx">XLSX</SelectItem>
-                  <SelectItem value="csv">CSV</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button onClick={handleExport} disabled={isExporting}>
-                {isExporting ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4 mr-2" />
-                )}
-                Export
-              </Button>
             </div>
           </div>
-          
-          {/* Filters */}
-          {reportType === 'tasks' && (
+        </CardHeader>
+        
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project Name</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Service Category</TableHead>
+                    <TableHead>Assignment Status</TableHead>
+                    <TableHead>Workflow Status</TableHead>
+                    <TableHead>Status Group</TableHead>
+                    <TableHead>Assignee</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead>Created Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTasks.map((task) => (
+                    <TableRow key={task.id}>
+                      <TableCell className="font-medium">{task.project_name}</TableCell>
+                      <TableCell>{task.client}</TableCell>
+                      <TableCell>{task.service_category}</TableCell>
+                      <TableCell>{getAssignmentStatusBadge(task.assignment_status)}</TableCell>
+                      <TableCell>{getWorkflowStatusBadge(task.workflow_status)}</TableCell>
+                      <TableCell>{getWorkflowStatusGroupBadge(task.status_group)}</TableCell>
+                      <TableCell>{task.assignee_name || 'Unassigned'}</TableCell>
+                      <TableCell>{task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}</TableCell>
+                      <TableCell>{task.created_date ? new Date(task.created_date).toLocaleDateString() : '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {filteredTasks.length === 0 && !loading && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No projects found matching the current filters.
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+        </TabsContent>
+
+        <TabsContent value="invoices" className="space-y-6">
+          {/* Invoice Statistics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-ca-accent/10 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-ca-accent" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Invoices</p>
+                    <p className="text-2xl font-bold text-ca-primary">{invoiceStats.total_invoices ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Amount</p>
+                    <p className="text-2xl font-bold text-ca-primary">₹{invoiceStats.total_amount?.toLocaleString('en-IN') ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Paid Amount</p>
+                    <p className="text-2xl font-bold text-ca-primary">₹{invoiceStats.paid_amount?.toLocaleString('en-IN') ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Outstanding</p>
+                    <p className="text-2xl font-bold text-ca-primary">₹{invoiceStats.total_amount?.toLocaleString('en-IN') ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Invoice Reports</CardTitle>
+                <div className="flex gap-2">
+                  <Select value={invoiceExportFormat} onValueChange={setInvoiceExportFormat}>
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="xlsx">XLSX</SelectItem>
+                      <SelectItem value="csv">CSV</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={handleInvoiceExport} disabled={invoiceExporting}>
+                    {invoiceExporting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Export
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Invoice Filters */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4 z-10" />
                   <Input
-                    placeholder="Search Project..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search Invoice..."
+                    value={invoiceSearchTerm}
+                    onChange={(e) => setInvoiceSearchTerm(e.target.value)}
                     className="pl-10"
                   />
                 </div>
                 
-                <Select value={assignmentStatusFilter} onValueChange={setAssignmentStatusFilter}>
+                <Select value={invoiceStatusFilter} onValueChange={setInvoiceStatusFilter}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Assignment Status" />
+                    <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Assignment</SelectItem>
-                    <SelectItem value="assigned">Assigned</SelectItem>
-                    <SelectItem value="not_assigned">Not Assigned</SelectItem>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                    <SelectItem value="overdue">Overdue</SelectItem>
                   </SelectContent>
                 </Select>
 
-                <Select value={workflowStatusFilter} onValueChange={setWorkflowStatusFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Workflow Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Workflow</SelectItem>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="in_review">In Review</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select value={workflowStatusGroupFilter} onValueChange={setWorkflowStatusGroupFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Status Group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Groups</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Assignee" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Assignees</SelectItem>
-                    {assignees.map(assignee => (
-                      <SelectItem key={assignee.id} value={assignee.id}>
-                        {assignee.first_name} {assignee.last_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                <Select value={clientFilter} onValueChange={setClientFilter}>
+                <Select value={invoiceClientFilter} onValueChange={setInvoiceClientFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="Client" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Clients</SelectItem>
                     {clients.map(client => (
-                      <SelectItem key={client.client_id} value={client.client_id}>
-                        {client.client_name}
-                      </SelectItem>
+                      <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
 
-                <Select value={serviceCategoryFilter} onValueChange={setServiceCategoryFilter}>
+                <Select value={invoiceServiceCategoryFilter} onValueChange={setInvoiceServiceCategoryFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="Service Category" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Categories</SelectItem>
                     {serviceCategories.map(category => (
-                      <SelectItem key={category.service_category_id} value={category.service_category_id}>
-                        {category.service_category_name}
-                      </SelectItem>
+                      <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-
-                <Input
-                  type="date"
-                  placeholder="Due date from"
-                  value={dueDateFrom}
-                  onChange={(e) => setDueDateFrom(e.target.value)}
-                />
-
-                <Input
-                  type="date"
-                  placeholder="Due date to"
-                  value={dueDateTo}
-                  onChange={(e) => setDueDateTo(e.target.value)}
-                />
               </div>
-            </>
-          )}
+              
+              {/* Date Range Filter - Separate Row */}
+              <div className="mt-4">
+                <div className="space-y-1 max-w-md">
+                  <label className="text-sm font-medium text-muted-foreground">Date Range</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      value={invoiceDateFrom}
+                      onChange={(e) => setInvoiceDateFrom(e.target.value)}
+                      placeholder="From"
+                      className="flex-1"
+                    />
+                    <span className="text-muted-foreground text-sm">to</span>
+                    <Input
+                      type="date"
+                      value={invoiceDateTo}
+                      onChange={(e) => setInvoiceDateTo(e.target.value)}
+                      placeholder="To"
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            
+            <CardContent>
+              {invoiceLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Invoice Number</TableHead>
+                        <TableHead>Invoice Date</TableHead>
+                        <TableHead>Client Name</TableHead>
+                        <TableHead>Task Name</TableHead>
+                        <TableHead>Service Category</TableHead>
+                        <TableHead>Amount Before Tax</TableHead>
+                        <TableHead>Invoice Amount</TableHead>
+                        <TableHead>Paid Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Due Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredInvoices.map((invoice) => (
+                        <TableRow key={invoice.invoice_id}>
+                          <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
+                          <TableCell>{invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : '-'}</TableCell>
+                          <TableCell>{invoice.client_name}</TableCell>
+                          <TableCell>{invoice.task_name}</TableCell>
+                          <TableCell>{invoice.service_category}</TableCell>
+                          <TableCell>₹{invoice.amount_before_tax?.toLocaleString('en-IN') ?? 0}</TableCell>
+                          <TableCell className="font-medium">₹{invoice.invoice_amount?.toLocaleString('en-IN') ?? 0}</TableCell>
+                          <TableCell>₹{invoice.paid_amount?.toLocaleString('en-IN') ?? 0}</TableCell>
+                          <TableCell>{getInvoiceStatusBadge(invoice.status)}</TableCell>
+                          <TableCell>{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
 
-          {/* Filters for other report types */}
-          {reportType !== 'tasks' && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-              {reportType === 'client-statement' && (
-                <Select value={selectedClientForStatement} onValueChange={setSelectedClientForStatement}>
+                  {filteredInvoices.length === 0 && !invoiceLoading && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No invoices found matching the current filters.
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="credit-notes" className="space-y-6">
+          {/* Credit Note Statistics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-ca-accent/10 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-ca-accent" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Credit Notes</p>
+                    <p className="text-2xl font-bold text-ca-primary">{creditNoteStats.total_credit_notes ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Amount</p>
+                    <p className="text-2xl font-bold text-ca-primary">₹{creditNoteStats.total_amount?.toLocaleString('en-IN') ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Credit Notes Reports</CardTitle>
+                <div className="flex gap-2">
+                  <Select value={creditNoteExportFormat} onValueChange={setCreditNoteExportFormat}>
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="xlsx">XLSX</SelectItem>
+                      <SelectItem value="csv">CSV</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={handleCreditNoteExport} disabled={creditNoteExporting}>
+                    {creditNoteExporting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Export
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Credit Note Filters */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4 z-10" />
+                  <Input
+                    placeholder="Search Credit Note..."
+                    value={creditNoteSearchTerm}
+                    onChange={(e) => setCreditNoteSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                
+                <Select value={creditNoteStatusFilter} onValueChange={setCreditNoteStatusFilter}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select Client" />
+                    <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    {clients.map(client => (
-                      <SelectItem key={client.client_id} value={client.client_id}>
-                        {client.client_name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
                   </SelectContent>
                 </Select>
-              )}
-              
-              {(reportType === 'invoice-register' || reportType === 'aging' || reportType === 'revenue-by-client') && (
-                <Select value={clientFilter} onValueChange={setClientFilter}>
+
+                <Select value={creditNoteClientFilter} onValueChange={setCreditNoteClientFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="Client" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Clients</SelectItem>
                     {clients.map(client => (
-                      <SelectItem key={client.client_id} value={client.client_id}>
-                        {client.client_name}
-                      </SelectItem>
+                      <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
-
-              <Input
-                type="date"
-                placeholder="Date from"
-                value={dueDateFrom}
-                onChange={(e) => setDueDateFrom(e.target.value)}
-              />
-
-              <Input
-                type="date"
-                placeholder="Date to"
-                value={dueDateTo}
-                onChange={(e) => setDueDateTo(e.target.value)}
-              />
-            </div>
-          )}
-        </CardHeader>
-        
-        <CardContent>
-          {isLoading ? (
-            <div className="flex justify-center items-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-ca-primary" />
-            </div>
-          ) : (
-            <>
-              {/* Task Report Table */}
-              {reportType === 'tasks' && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Project Name</TableHead>
-                      <TableHead>Client</TableHead>
-                      <TableHead>Service Category</TableHead>
-                      <TableHead>Assignment Status</TableHead>
-                      <TableHead>Workflow Status</TableHead>
-                      <TableHead>Status Group</TableHead>
-                      <TableHead>Assignee</TableHead>
-                      <TableHead>Due Date</TableHead>
-                      <TableHead>Created Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredTasks.length === 0 ? (
+              </div>
+              
+              {/* Date Range Filter */}
+              <div className="mt-4">
+                <div className="space-y-1 max-w-md">
+                  <label className="text-sm font-medium text-muted-foreground">Date Range</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      value={creditNoteDateFrom}
+                      onChange={(e) => setCreditNoteDateFrom(e.target.value)}
+                      placeholder="From"
+                      className="flex-1"
+                    />
+                    <span className="text-muted-foreground text-sm">to</span>
+                    <Input
+                      type="date"
+                      value={creditNoteDateTo}
+                      onChange={(e) => setCreditNoteDateTo(e.target.value)}
+                      placeholder="To"
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            
+            <CardContent>
+              {creditNoteLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                          No projects found matching the current filters.
-                        </TableCell>
+                        <TableHead>Credit Note Number</TableHead>
+                        <TableHead>Credit Note Date</TableHead>
+                        <TableHead>Invoice Number</TableHead>
+                        <TableHead>Client Name</TableHead>
+                        <TableHead>Amount Before Tax</TableHead>
+                        <TableHead>Total GST</TableHead>
+                        <TableHead>Credit Note Amount</TableHead>
+                        <TableHead>Status</TableHead>
                       </TableRow>
-                    ) : (
-                      filteredTasks.map((task) => (
-                        <TableRow key={task.id}>
-                          <TableCell className="font-medium">{task.name}</TableCell>
-                          <TableCell>{task.client}</TableCell>
-                          <TableCell>{task.serviceCategory}</TableCell>
-                          <TableCell>{getAssignmentStatusBadge(task.assignmentStatus)}</TableCell>
-                          <TableCell>{getWorkflowStatusBadge(task.workflowStatus)}</TableCell>
-                          <TableCell>{getWorkflowStatusGroupBadge(task.workflowStatusGroup)}</TableCell>
-                          <TableCell>{task.assigneeName || 'Unassigned'}</TableCell>
-                          <TableCell>{task.dueDate}</TableCell>
-                          <TableCell>{task.createdAt}</TableCell>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredCreditNotes.map((note) => (
+                        <TableRow key={note.credit_note_id}>
+                          <TableCell className="font-medium">{note.credit_note_number}</TableCell>
+                          <TableCell>{note.credit_note_date ? new Date(note.credit_note_date).toLocaleDateString() : '-'}</TableCell>
+                          <TableCell>{note.invoice_number}</TableCell>
+                          <TableCell>{note.client_name}</TableCell>
+                          <TableCell>₹{note.amount_before_tax?.toLocaleString('en-IN') ?? 0}</TableCell>
+                          <TableCell>₹{note.total_gst?.toLocaleString('en-IN') ?? 0}</TableCell>
+                          <TableCell className="font-medium">₹{note.credit_note_amount?.toLocaleString('en-IN') ?? 0}</TableCell>
+                          <TableCell>{getCreditNoteStatusBadge(note.status)}</TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              )}
+                      ))}
+                    </TableBody>
+                  </Table>
 
-              {/* Invoice Register Report Table */}
-              {reportType === 'invoice-register' && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice Number</TableHead>
-                      <TableHead>Invoice Date</TableHead>
-                      <TableHead>Client Name</TableHead>
-                      <TableHead>Task Name</TableHead>
-                      <TableHead>Invoice Amount</TableHead>
-                      <TableHead>Paid Amount</TableHead>
-                      <TableHead>Outstanding Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Due Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!Array.isArray(invoiceRegister) || invoiceRegister.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                          No invoices found.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      invoiceRegister.map((invoice, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
-                          <TableCell>{invoice.invoice_date}</TableCell>
-                          <TableCell>{invoice.client_name}</TableCell>
-                          <TableCell>{invoice.task_name}</TableCell>
-                          <TableCell>₹{invoice.invoice_amount.toLocaleString()}</TableCell>
-                          <TableCell>₹{invoice.paid_amount.toLocaleString()}</TableCell>
-                          <TableCell>₹{invoice.outstanding_amount.toLocaleString()}</TableCell>
-                          <TableCell>
-                            <Badge variant={invoice.status === 'paid' ? 'default' : 'secondary'}>
-                              {invoice.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{invoice.due_date}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-
-              {/* Aging Report Table */}
-              {reportType === 'aging' && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Client Name</TableHead>
-                      <TableHead>Invoice Number</TableHead>
-                      <TableHead>Invoice Date</TableHead>
-                      <TableHead>Due Date</TableHead>
-                      <TableHead>Invoice Amount</TableHead>
-                      <TableHead>Paid Amount</TableHead>
-                      <TableHead>Outstanding Amount</TableHead>
-                      <TableHead>Days Overdue</TableHead>
-                      <TableHead>Age Bucket</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!Array.isArray(agingReport) || agingReport.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                          No aging data found.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      agingReport.map((item, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{item.client_name}</TableCell>
-                          <TableCell>{item.invoice_number}</TableCell>
-                          <TableCell>{item.invoice_date}</TableCell>
-                          <TableCell>{item.due_date}</TableCell>
-                          <TableCell>₹{item.invoice_amount.toLocaleString()}</TableCell>
-                          <TableCell>₹{item.paid_amount.toLocaleString()}</TableCell>
-                          <TableCell>₹{item.outstanding_amount.toLocaleString()}</TableCell>
-                          <TableCell>{item.days_overdue}</TableCell>
-                          <TableCell>
-                            <Badge>{item.age_bucket}</Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-
-              {/* Revenue by Client Report Table */}
-              {reportType === 'revenue-by-client' && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Client Name</TableHead>
-                      <TableHead>Total Invoices</TableHead>
-                      <TableHead>Total Revenue</TableHead>
-                      <TableHead>Paid Amount</TableHead>
-                      <TableHead>Outstanding Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!Array.isArray(revenueByClient) || revenueByClient.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                          No revenue data found.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      revenueByClient.map((item, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{item.client_name}</TableCell>
-                          <TableCell>{item.total_invoices}</TableCell>
-                          <TableCell>₹{item.total_revenue.toLocaleString()}</TableCell>
-                          <TableCell>₹{item.paid_amount.toLocaleString()}</TableCell>
-                          <TableCell>₹{item.outstanding_amount.toLocaleString()}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-
-              {/* Client Statement Report */}
-              {reportType === 'client-statement' && (
-                <div className="space-y-4">
-                  {clientStatement ? (
-                    <>
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                        <Card>
-                          <CardContent className="p-4">
-                            <p className="text-sm text-muted-foreground">Opening Balance</p>
-                            <p className="text-2xl font-bold">₹{clientStatement.opening_balance.toLocaleString()}</p>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="p-4">
-                            <p className="text-sm text-muted-foreground">Closing Balance</p>
-                            <p className="text-2xl font-bold">₹{clientStatement.closing_balance.toLocaleString()}</p>
-                          </CardContent>
-                        </Card>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div>
-                          <h3 className="text-lg font-semibold mb-2">Invoices</h3>
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Invoice Number</TableHead>
-                                <TableHead>Invoice Date</TableHead>
-                                <TableHead>Amount</TableHead>
-                                <TableHead>Paid Amount</TableHead>
-                                <TableHead>Outstanding</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {Array.isArray(clientStatement.invoices) && clientStatement.invoices.length > 0 ? (
-                                clientStatement.invoices.map((invoice, index) => (
-                                  <TableRow key={index}>
-                                    <TableCell>{invoice.invoice_number}</TableCell>
-                                    <TableCell>{invoice.invoice_date}</TableCell>
-                                    <TableCell>₹{invoice.amount.toLocaleString()}</TableCell>
-                                    <TableCell>₹{invoice.paid_amount.toLocaleString()}</TableCell>
-                                    <TableCell>₹{invoice.outstanding_amount.toLocaleString()}</TableCell>
-                                  </TableRow>
-                                ))
-                              ) : (
-                                <TableRow>
-                                  <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
-                                    No invoices found.
-                                  </TableCell>
-                                </TableRow>
-                              )}
-                            </TableBody>
-                          </Table>
-                        </div>
-
-                        <div>
-                          <h3 className="text-lg font-semibold mb-2">Payments</h3>
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Payment Date</TableHead>
-                                <TableHead>Amount</TableHead>
-                                <TableHead>Invoice Number</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {Array.isArray(clientStatement.payments) && clientStatement.payments.length > 0 ? (
-                                clientStatement.payments.map((payment, index) => (
-                                  <TableRow key={index}>
-                                    <TableCell>{payment.payment_date}</TableCell>
-                                    <TableCell>₹{payment.amount.toLocaleString()}</TableCell>
-                                    <TableCell>{payment.invoice_number}</TableCell>
-                                  </TableRow>
-                                ))
-                              ) : (
-                                <TableRow>
-                                  <TableCell colSpan={3} className="text-center py-4 text-muted-foreground">
-                                    No payments found.
-                                  </TableCell>
-                                </TableRow>
-                              )}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
+                  {filteredCreditNotes.length === 0 && !creditNoteLoading && (
                     <div className="text-center py-8 text-muted-foreground">
-                      Please select a client to view the statement.
+                      No credit notes found matching the current filters.
                     </div>
                   )}
-                </div>
+                </>
               )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="debit-notes" className="space-y-6">
+          {/* Debit Note Statistics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-ca-accent/10 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-ca-accent" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Debit Notes</p>
+                    <p className="text-2xl font-bold text-ca-primary">{debitNoteStats.total_debit_notes ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Amount</p>
+                    <p className="text-2xl font-bold text-ca-primary">₹{debitNoteStats.total_amount?.toLocaleString('en-IN') ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Paid Amount</p>
+                    <p className="text-2xl font-bold text-ca-primary">₹{debitNoteStats.paid_amount?.toLocaleString('en-IN') ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Outstanding</p>
+                    <p className="text-2xl font-bold text-ca-primary">₹{debitNoteStats.outstanding_amount?.toLocaleString('en-IN') ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Debit Notes Reports</CardTitle>
+                <div className="flex gap-2">
+                  <Select value={debitNoteExportFormat} onValueChange={setDebitNoteExportFormat}>
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="xlsx">XLSX</SelectItem>
+                      <SelectItem value="csv">CSV</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={handleDebitNoteExport} disabled={debitNoteExporting}>
+                    {debitNoteExporting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Export
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Debit Note Filters */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4 z-10" />
+                  <Input
+                    placeholder="Search Debit Note..."
+                    value={debitNoteSearchTerm}
+                    onChange={(e) => setDebitNoteSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                
+                <Select value={debitNoteStatusFilter} onValueChange={setDebitNoteStatusFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                    <SelectItem value="overdue">Overdue</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={debitNoteClientFilter} onValueChange={setDebitNoteClientFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Clients</SelectItem>
+                    {clients.map(client => (
+                      <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Date Range Filter */}
+              <div className="mt-4">
+                <div className="space-y-1 max-w-md">
+                  <label className="text-sm font-medium text-muted-foreground">Date Range</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      value={debitNoteDateFrom}
+                      onChange={(e) => setDebitNoteDateFrom(e.target.value)}
+                      placeholder="From"
+                      className="flex-1"
+                    />
+                    <span className="text-muted-foreground text-sm">to</span>
+                    <Input
+                      type="date"
+                      value={debitNoteDateTo}
+                      onChange={(e) => setDebitNoteDateTo(e.target.value)}
+                      placeholder="To"
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            
+            <CardContent>
+              {debitNoteLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Debit Note Number</TableHead>
+                        <TableHead>Client Name</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Paid Amount</TableHead>
+                        <TableHead>Outstanding Amount</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Created Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredDebitNotes.map((note) => (
+                        <TableRow key={note.debit_note_id}>
+                          <TableCell className="font-medium">{note.debit_note_number}</TableCell>
+                          <TableCell>{note.client_name}</TableCell>
+                          <TableCell>{note.description}</TableCell>
+                          <TableCell className="font-medium">₹{note.amount?.toLocaleString('en-IN') ?? 0}</TableCell>
+                          <TableCell>₹{note.paid_amount?.toLocaleString('en-IN') ?? 0}</TableCell>
+                          <TableCell>₹{note.outstanding_amount?.toLocaleString('en-IN') ?? 0}</TableCell>
+                          <TableCell>{note.due_date ? new Date(note.due_date).toLocaleDateString() : '-'}</TableCell>
+                          <TableCell>{getDebitNoteStatusBadge(note.status)}</TableCell>
+                          <TableCell>{note.created_at ? new Date(note.created_at).toLocaleDateString() : '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+
+                  {filteredDebitNotes.length === 0 && !debitNoteLoading && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No debit notes found matching the current filters.
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
 
 export default AdminReportsManagement;
-

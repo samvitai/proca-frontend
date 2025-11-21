@@ -1,30 +1,92 @@
-// Report API service
+// Reports API service
 import { api } from "@/lib/utils";
 
-export interface ReportTask {
+// Task Report Interfaces
+export interface TaskReport {
   id: string;
+  project_name: string;
   client: string;
-  name: string;
-  description?: string;
-  serviceCategory: string;
-  // Some backends return "unassigned" or "not_assigned" – support both
-  assignmentStatus: "assigned" | "not_assigned" | "unassigned";
-  workflowStatus: "open" | "in_progress" | "in_review" | "closed";
-  workflowStatusGroup: "pending" | "completed";
-  assigneeId?: string;
-  assigneeName?: string;
-  clientId: string;
-  serviceCategoryId: string;
-  dueDate: string;
-  createdAt: string;
-  completedAt?: string;
+  client_id: string;
+  service_category: string;
+  service_category_id: string;
+  assignment_status: 'assigned' | 'not_assigned';
+  workflow_status: 'open' | 'in_progress' | 'in_review' | 'closed';
+  status_group: 'pending' | 'completed';
+  assignee_id: string | null;
+  assignee_name: string | null;
+  due_date: string;
+  created_date: string;
+  completed_date?: string;
+  updated_at?: string;
+  comments?: string;
 }
 
-export interface InvoiceRegisterReport {
+// Raw API Task Report (what the API actually returns)
+interface ApiTaskReport {
+  task_id?: string;
+  id?: string;
+  task_name?: string;
+  project_name?: string;
+  name?: string;
+  client_name?: string;
+  client?: string;
+  client_id: string;
+  service_category_name?: string;
+  service_category?: string;
+  service_category_id: string;
+  assignment_status: 'assigned' | 'not_assigned' | 'unassigned';
+  workflow_status: 'open' | 'in_progress' | 'in_review' | 'closed';
+  status_group?: 'pending' | 'completed';
+  assignee_id: string | null;
+  assignee_name: string | null;
+  due_date: string;
+  created_at?: string;
+  created_date?: string;
+  completed_date?: string;
+  completed_at?: string;
+  updated_at?: string;
+  updated_date?: string;
+  comments?: Array<{
+    comment_id?: string;
+    id?: string;
+    comment_text?: string;
+    content?: string;
+    user_name?: string;
+    author?: string;
+    created_at?: string;
+    timestamp?: string;
+  }>;
+}
+
+export interface TaskReportResponse {
+  success: boolean;
+  status: string;
+  message: string;
+  data: {
+    tasks: ApiTaskReport[] | TaskReport[]; // Can be either format
+    summary: {
+      total_projects: number;
+      assigned: number;
+      completed: number;
+      overdue: number;
+    };
+  };
+  error_code: string | null;
+  timestamp: string;
+  request_id: string;
+}
+
+// Invoice Register Report Interfaces
+export interface InvoiceRegisterItem {
+  invoice_id: string;
   invoice_number: string;
   invoice_date: string;
+  client_id: string;
   client_name: string;
   task_name: string;
+  service_category: string;
+  amount_before_tax: number;
+  total_gst: number;
   invoice_amount: number;
   paid_amount: number;
   outstanding_amount: number;
@@ -32,7 +94,26 @@ export interface InvoiceRegisterReport {
   due_date: string;
 }
 
-export interface AgingReport {
+export interface InvoiceRegisterResponse {
+  success: boolean;
+  status: string;
+  message: string;
+  data: {
+    invoices: InvoiceRegisterItem[];
+    summary: {
+      total_invoices: number;
+      total_amount: number;
+      paid_amount: number;
+      outstanding_amount: number;
+    };
+  };
+  error_code: string | null;
+  timestamp: string;
+  request_id: string;
+}
+
+// Aging Report Interfaces
+export interface AgingReportItem {
   client_id: string;
   client_name: string;
   invoice_number: string;
@@ -42,208 +123,201 @@ export interface AgingReport {
   paid_amount: number;
   outstanding_amount: number;
   days_overdue: number;
-  age_bucket: string; // e.g., "0-30", "31-60", "61-90", "90+"
+  age_bucket: '0-30' | '31-60' | '61-90' | '91-120' | '120+';
 }
 
-export interface RevenueByClientReport {
+export interface AgingReportResponse {
+  success: boolean;
+  status: string;
+  message: string;
+  data: {
+    receivables: AgingReportItem[];
+    summary: {
+      total_outstanding: number;
+      bucket_0_30: number;
+      bucket_31_60: number;
+      bucket_61_90: number;
+      bucket_91_120: number;
+      bucket_120_plus: number;
+    };
+  };
+  error_code: string | null;
+  timestamp: string;
+  request_id: string;
+}
+
+// Revenue by Client Report Interfaces
+export interface RevenueByClientItem {
   client_id: string;
   client_name: string;
   total_invoices: number;
   total_revenue: number;
   paid_amount: number;
   outstanding_amount: number;
-}
-
-export interface ClientStatementReport {
-  client_id: string;
-  client_name: string;
-  statement_period: {
-    start_date: string;
-    end_date: string;
-  };
-  opening_balance: number;
-  invoices: Array<{
-    invoice_number: string;
-    invoice_date: string;
-    amount: number;
-    paid_amount: number;
-    outstanding_amount: number;
+  service_categories: Array<{
+    category: string;
+    revenue: number;
   }>;
-  payments: Array<{
-    payment_date: string;
-    amount: number;
-    invoice_number: string;
-  }>;
-  closing_balance: number;
 }
 
-export interface TaskReportResponse {
+export interface RevenueByClientResponse {
   success: boolean;
-  data: ReportTask[] | {
-    tasks?: ReportTask[];
-    [key: string]: any;
+  status: string;
+  message: string;
+  data: {
+    clients: RevenueByClientItem[];
+    summary: {
+      total_clients: number;
+      total_revenue: number;
+      total_paid: number;
+      total_outstanding: number;
+    };
   };
-  summary?: {
-    total: number;
-    assigned: number;
-    completed: number;
-    overdue: number;
+  error_code: string | null;
+  timestamp: string;
+  request_id: string;
+}
+
+// Client Statement Interfaces
+export interface ClientStatementItem {
+  transaction_id: string;
+  transaction_type: 'invoice' | 'payment' | 'credit_note' | 'debit_note';
+  transaction_date: string;
+  invoice_number?: string;
+  description: string;
+  debit_amount: number;
+  credit_amount: number;
+  balance: number;
+}
+
+export interface ClientStatementResponse {
+  success: boolean;
+  status: string;
+  message: string;
+  data: {
+    client_id: string;
+    client_name: string;
+    statement_period: {
+      from_date: string;
+      to_date: string;
+    };
+    opening_balance: number;
+    closing_balance: number;
+    transactions: ClientStatementItem[];
+    summary: {
+      total_invoices: number;
+      total_payments: number;
+      total_credit_notes: number;
+      total_debit_notes: number;
+      net_amount: number;
+    };
   };
+  error_code: string | null;
+  timestamp: string;
+  request_id: string;
 }
 
-export interface InvoiceRegisterReportResponse {
-  success: boolean;
-  data: InvoiceRegisterReport[];
-}
+// API service functions
 
-export interface AgingReportResponse {
-  success: boolean;
-  data: AgingReport[];
-}
-
-export interface RevenueByClientReportResponse {
-  success: boolean;
-  data: RevenueByClientReport[];
-}
-
-export interface ClientStatementReportResponse {
-  success: boolean;
-  data: ClientStatementReport;
-}
-
-// Query parameters for reports
-export interface ReportFilters {
-  assignmentStatus?: "assigned" | "not_assigned" | "unassigned" | "all";
-  workflowStatus?: "open" | "in_progress" | "in_review" | "closed" | "all";
-  workflowStatusGroup?: "pending" | "completed" | "all";
-  assigneeId?: string;
-  clientId?: string;
-  serviceCategoryId?: string;
-  dueDateFrom?: string;
-  dueDateTo?: string;
-  createdDateFrom?: string;
-  createdDateTo?: string;
-  search?: string;
-}
+// Helper function to map API task report to TaskReport
+const mapApiTaskReportToTaskReport = (apiTask: ApiTaskReport): TaskReport => {
+  // Map task name - try multiple possible field names
+  const projectName = apiTask.project_name || apiTask.task_name || apiTask.name || 'Untitled Project';
+  
+  // Map client name - try multiple possible field names
+  const clientName = apiTask.client_name || apiTask.client || 'Unknown Client';
+  
+  // Map service category
+  const serviceCategory = apiTask.service_category_name || apiTask.service_category || 'Unknown Category';
+  
+  // Map created date
+  const createdDate = apiTask.created_date || apiTask.created_at || new Date().toISOString();
+  
+  // Map completed date
+  const completedDate = apiTask.completed_date || apiTask.completed_at;
+  
+  // Map updated date
+  const updatedDate = apiTask.updated_at || apiTask.updated_date;
+  
+  // Map comments - combine all comments into a single string
+  let commentsText = '';
+  if (apiTask.comments && Array.isArray(apiTask.comments) && apiTask.comments.length > 0) {
+    commentsText = apiTask.comments.map((comment: any) => {
+      const text = comment.comment_text || comment.content || '';
+      const author = comment.user_name || comment.author || 'Unknown';
+      const date = comment.created_at || comment.timestamp || '';
+      return `[${author}${date ? ' - ' + new Date(date).toLocaleDateString() : ''}]: ${text}`;
+    }).join(' | ');
+  }
+  
+  // Map assignment status (handle 'unassigned' as 'not_assigned')
+  const assignmentStatus = apiTask.assignment_status === 'unassigned' 
+    ? 'not_assigned' 
+    : apiTask.assignment_status;
+  
+  // Determine status group if not provided
+  let statusGroup: 'pending' | 'completed' = apiTask.status_group || 'pending';
+  if (!apiTask.status_group) {
+    // Infer from workflow status
+    if (apiTask.workflow_status === 'closed') {
+      statusGroup = 'completed';
+    } else {
+      statusGroup = 'pending';
+    }
+  }
+  
+  return {
+    id: apiTask.task_id || apiTask.id || '',
+    project_name: projectName,
+    client: clientName,
+    client_id: apiTask.client_id,
+    service_category: serviceCategory,
+    service_category_id: apiTask.service_category_id,
+    assignment_status: assignmentStatus as 'assigned' | 'not_assigned',
+    workflow_status: apiTask.workflow_status,
+    status_group: statusGroup,
+    assignee_id: apiTask.assignee_id,
+    assignee_name: apiTask.assignee_name,
+    due_date: apiTask.due_date,
+    created_date: createdDate,
+    completed_date: completedDate,
+    updated_at: updatedDate,
+    comments: commentsText || undefined
+  };
+};
 
 // Fetch Task Report
-export const fetchTaskReport = async (filters?: ReportFilters): Promise<TaskReportResponse> => {
+export const fetchTaskReport = async (params?: {
+  assignment_status?: string;
+  workflow_status?: string;
+  status_group?: string;
+  assignee_id?: string;
+  client_id?: string;
+  service_category_id?: string;
+  due_date_from?: string;
+  due_date_to?: string;
+  search?: string;
+}): Promise<{
+  tasks: TaskReport[];
+  summary: TaskReportResponse['data']['summary'];
+}> => {
   try {
-    const params = new URLSearchParams();
-    
-    if (filters) {
-      if (filters.assignmentStatus && filters.assignmentStatus !== 'all') {
-        params.append('assignment_status', filters.assignmentStatus);
-      }
-      if (filters.workflowStatus && filters.workflowStatus !== 'all') {
-        params.append('workflow_status', filters.workflowStatus);
-      }
-      if (filters.workflowStatusGroup && filters.workflowStatusGroup !== 'all') {
-        params.append('workflow_status_group', filters.workflowStatusGroup);
-      }
-      if (filters.assigneeId) {
-        params.append('assignee_id', filters.assigneeId);
-      }
-      if (filters.clientId) {
-        params.append('client_id', filters.clientId);
-      }
-      if (filters.serviceCategoryId) {
-        params.append('service_category_id', filters.serviceCategoryId);
-      }
-      if (filters.dueDateFrom) {
-        params.append('due_date_from', filters.dueDateFrom);
-      }
-      if (filters.dueDateTo) {
-        params.append('due_date_to', filters.dueDateTo);
-      }
-      if (filters.createdDateFrom) {
-        params.append('created_date_from', filters.createdDateFrom);
-      }
-      if (filters.createdDateTo) {
-        params.append('created_date_to', filters.createdDateTo);
-      }
-      if (filters.search) {
-        params.append('search', filters.search);
-      }
-    }
-
-    const url = `/api/reports/tasks${params.toString() ? `?${params.toString()}` : ""}`;
-    const response = await api.get<any>(url);
-    
-    if (!response.data || !response.data.success) {
-      throw new Error('Failed to fetch task report');
-    }
-    
-    // Normalize the response structure
-    let normalizedData: any[] = [];
-    if (Array.isArray(response.data.data)) {
-      normalizedData = response.data.data;
-    } else if (response.data.data && Array.isArray(response.data.data.tasks)) {
-      normalizedData = response.data.data.tasks;
-    } else if (Array.isArray(response.data.tasks)) {
-      normalizedData = response.data.tasks;
-    }
-
-    // Map snake_case keys from the API into the camelCase structure
-    const mappedTasks: ReportTask[] = normalizedData.map((t) => {
-      // Prefer explicit assignment status from API; fall back to assignee presence
-      const rawAssignmentStatus: string | undefined =
-        t.assignmentStatus ?? t.assignment_status;
-
-      let assignmentStatus: ReportTask["assignmentStatus"] = "not_assigned";
-      if (rawAssignmentStatus === "assigned") {
-        assignmentStatus = "assigned";
-      } else if (rawAssignmentStatus === "unassigned" || rawAssignmentStatus === "not_assigned") {
-        assignmentStatus = rawAssignmentStatus as ReportTask["assignmentStatus"];
-      } else if (t.assignee_id || t.assigneeId) {
-        assignmentStatus = "assigned";
-      }
-
-      const rawWorkflowStatus: ReportTask["workflowStatus"] =
-        t.workflowStatus ?? t.workflow_status ?? "open";
-
-      const rawWorkflowStatusGroup: ReportTask["workflowStatusGroup"] =
-        t.workflowStatusGroup ??
-        t.workflow_status_group ??
-        (rawWorkflowStatus === "closed" ? "completed" : "pending");
-
-      return {
-        id: t.id ?? t.task_id ?? "",
-        client: t.client ?? t.client_name ?? "",
-        name: t.name ?? t.task_name ?? "",
-        description: t.description ?? t.service_description,
-        serviceCategory:
-          t.serviceCategory ??
-          t.service_category_name ??
-          t.service_category ??
-          t.category_name ??
-          "",
-        assignmentStatus,
-        workflowStatus: rawWorkflowStatus,
-        workflowStatusGroup: rawWorkflowStatusGroup,
-        assigneeId: t.assigneeId ?? t.assignee_id,
-        assigneeName: t.assigneeName ?? t.assignee_name,
-        clientId: t.clientId ?? t.client_id ?? "",
-        serviceCategoryId:
-          t.serviceCategoryId ??
-          t.service_category_id ??
-          t.category_id ??
-          "",
-        dueDate: t.dueDate ?? t.due_date ?? "",
-        createdAt:
-          t.createdAt ??
-          t.created_at ??
-          t.created_date ??
-          t.task_created_at ??
-          "",
-        completedAt: t.completedAt ?? t.completed_at,
-      };
+    const response = await api.get<TaskReportResponse>('/api/reports/tasks', {
+      params: params || {}
     });
     
+    const data = response.data;
+    
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to fetch task report');
+    }
+    
+    // Map API tasks to TaskReport format
+    const mappedTasks = data.data.tasks.map((task: any) => mapApiTaskReportToTaskReport(task));
+    
     return {
-      success: response.data.success,
-      data: mappedTasks,
-      summary: response.data.summary || response.data.data?.summary
+      tasks: mappedTasks,
+      summary: data.data.summary
     };
   } catch (error) {
     console.error('Error fetching task report:', error);
@@ -252,50 +326,31 @@ export const fetchTaskReport = async (filters?: ReportFilters): Promise<TaskRepo
 };
 
 // Fetch Invoice Register Report
-export const fetchInvoiceRegisterReport = async (filters?: {
-  clientId?: string;
-  dateFrom?: string;
-  dateTo?: string;
+export const fetchInvoiceRegisterReport = async (params?: {
+  client_id?: string;
+  service_category_id?: string;
   status?: string;
-}): Promise<InvoiceRegisterReportResponse> => {
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+}): Promise<{
+  invoices: InvoiceRegisterItem[];
+  summary: InvoiceRegisterResponse['data']['summary'];
+}> => {
   try {
-    const params = new URLSearchParams();
+    const response = await api.get<InvoiceRegisterResponse>('/api/reports/invoice-register', {
+      params: params || {}
+    });
     
-    if (filters) {
-      if (filters.clientId) {
-        params.append('client_id', filters.clientId);
-      }
-      if (filters.dateFrom) {
-        params.append('date_from', filters.dateFrom);
-      }
-      if (filters.dateTo) {
-        params.append('date_to', filters.dateTo);
-      }
-      if (filters.status) {
-        params.append('status', filters.status);
-      }
-    }
-
-    const url = `/api/reports/invoice-register${params.toString() ? `?${params.toString()}` : ''}`;
-    const response = await api.get<any>(url);
+    const data = response.data;
     
-    if (!response.data || !response.data.success) {
-      throw new Error('Failed to fetch invoice register report');
-    }
-    
-    // Normalize the response structure
-    let normalizedData: InvoiceRegisterReport[] = [];
-    if (Array.isArray(response.data.data)) {
-      normalizedData = response.data.data;
-    } else if (response.data.data && Array.isArray(response.data.data.invoices)) {
-      normalizedData = response.data.data.invoices;
-    } else if (Array.isArray(response.data.invoices)) {
-      normalizedData = response.data.invoices;
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to fetch invoice register report');
     }
     
     return {
-      success: response.data.success,
-      data: normalizedData
+      invoices: data.data.invoices,
+      summary: data.data.summary
     };
   } catch (error) {
     console.error('Error fetching invoice register report:', error);
@@ -304,42 +359,27 @@ export const fetchInvoiceRegisterReport = async (filters?: {
 };
 
 // Fetch Aging Report (Receivables)
-export const fetchAgingReport = async (filters?: {
-  clientId?: string;
-  asOfDate?: string;
-}): Promise<AgingReportResponse> => {
+export const fetchAgingReport = async (params?: {
+  client_id?: string;
+  as_of_date?: string;
+}): Promise<{
+  receivables: AgingReportItem[];
+  summary: AgingReportResponse['data']['summary'];
+}> => {
   try {
-    const params = new URLSearchParams();
+    const response = await api.get<AgingReportResponse>('/api/reports/aging', {
+      params: params || {}
+    });
     
-    if (filters) {
-      if (filters.clientId) {
-        params.append('client_id', filters.clientId);
-      }
-      if (filters.asOfDate) {
-        params.append('as_of_date', filters.asOfDate);
-      }
-    }
-
-    const url = `/api/reports/aging${params.toString() ? `?${params.toString()}` : ''}`;
-    const response = await api.get<any>(url);
+    const data = response.data;
     
-    if (!response.data || !response.data.success) {
-      throw new Error('Failed to fetch aging report');
-    }
-    
-    // Normalize the response structure
-    let normalizedData: AgingReport[] = [];
-    if (Array.isArray(response.data.data)) {
-      normalizedData = response.data.data;
-    } else if (response.data.data && Array.isArray(response.data.data.aging)) {
-      normalizedData = response.data.data.aging;
-    } else if (Array.isArray(response.data.aging)) {
-      normalizedData = response.data.aging;
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to fetch aging report');
     }
     
     return {
-      success: response.data.success,
-      data: normalizedData
+      receivables: data.data.receivables,
+      summary: data.data.summary
     };
   } catch (error) {
     console.error('Error fetching aging report:', error);
@@ -348,46 +388,28 @@ export const fetchAgingReport = async (filters?: {
 };
 
 // Fetch Revenue by Client Report
-export const fetchRevenueByClientReport = async (filters?: {
-  dateFrom?: string;
-  dateTo?: string;
-  clientId?: string;
-}): Promise<RevenueByClientReportResponse> => {
+export const fetchRevenueByClientReport = async (params?: {
+  date_from?: string;
+  date_to?: string;
+  client_id?: string;
+}): Promise<{
+  clients: RevenueByClientItem[];
+  summary: RevenueByClientResponse['data']['summary'];
+}> => {
   try {
-    const params = new URLSearchParams();
+    const response = await api.get<RevenueByClientResponse>('/api/reports/revenue-by-client', {
+      params: params || {}
+    });
     
-    if (filters) {
-      if (filters.dateFrom) {
-        params.append('date_from', filters.dateFrom);
-      }
-      if (filters.dateTo) {
-        params.append('date_to', filters.dateTo);
-      }
-      if (filters.clientId) {
-        params.append('client_id', filters.clientId);
-      }
-    }
-
-    const url = `/api/reports/revenue-by-client${params.toString() ? `?${params.toString()}` : ''}`;
-    const response = await api.get<any>(url);
+    const data = response.data;
     
-    if (!response.data || !response.data.success) {
-      throw new Error('Failed to fetch revenue by client report');
-    }
-    
-    // Normalize the response structure
-    let normalizedData: RevenueByClientReport[] = [];
-    if (Array.isArray(response.data.data)) {
-      normalizedData = response.data.data;
-    } else if (response.data.data && Array.isArray(response.data.data.revenue)) {
-      normalizedData = response.data.data.revenue;
-    } else if (Array.isArray(response.data.revenue)) {
-      normalizedData = response.data.revenue;
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to fetch revenue by client report');
     }
     
     return {
-      success: response.data.success,
-      data: normalizedData
+      clients: data.data.clients,
+      summary: data.data.summary
     };
   } catch (error) {
     console.error('Error fetching revenue by client report:', error);
@@ -395,67 +417,579 @@ export const fetchRevenueByClientReport = async (filters?: {
   }
 };
 
-// Fetch Client Statement Report
-export const fetchClientStatementReport = async (
+// Fetch Client Statement
+export const fetchClientStatement = async (
   clientId: string,
-  filters?: {
-    dateFrom?: string;
-    dateTo?: string;
+  params?: {
+    from_date?: string;
+    to_date?: string;
   }
-): Promise<ClientStatementReportResponse> => {
+): Promise<ClientStatementResponse['data']> => {
   try {
-    const params = new URLSearchParams();
+    const response = await api.get<ClientStatementResponse>(`/api/reports/client-statement/${clientId}`, {
+      params: params || {}
+    });
     
-    if (filters) {
-      if (filters.dateFrom) {
-        params.append('date_from', filters.dateFrom);
-      }
-      if (filters.dateTo) {
-        params.append('date_to', filters.dateTo);
-      }
-    }
-
-    const url = `/api/reports/client-statement/${clientId}${params.toString() ? `?${params.toString()}` : ''}`;
-    const response = await api.get<ClientStatementReportResponse>(url);
+    const data = response.data;
     
-    if (!response.data.success) {
-      throw new Error('Failed to fetch client statement report');
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to fetch client statement');
     }
     
-    return response.data;
+    return data.data;
   } catch (error) {
-    console.error('Error fetching client statement report:', error);
+    console.error('Error fetching client statement:', error);
     throw error;
   }
 };
 
-// Export report as file
+// Invoice Report Interfaces
+export interface InvoiceReportItem {
+  invoice_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  client_id: string;
+  client_name: string;
+  task_name: string;
+  service_category: string;
+  amount_before_tax: number;
+  total_gst: number;
+  invoice_amount: number;
+  paid_amount: number;
+  outstanding_amount: number;
+  amount_due: number;
+  status: string;
+  due_date: string;
+  created_at?: string;
+}
+
+export interface InvoiceReportResponse {
+  success: boolean;
+  status: string;
+  message: string;
+  data: {
+    invoices: InvoiceReportItem[];
+    summary: {
+      total_invoices: number;
+      total_amount: number;
+      paid_amount: number;
+      outstanding_amount: number;
+    };
+  };
+  error_code: string | null;
+  timestamp: string;
+  request_id: string;
+}
+
+// Helper function to map API invoice report to InvoiceReportItem
+const mapApiInvoiceReportToInvoiceReport = (apiInvoice: any): InvoiceReportItem => {
+  // Map task name - try multiple possible field names (prioritize taskname as that's what the API uses)
+  const taskName = apiInvoice.taskname || 
+                   apiInvoice.task_name || 
+                   apiInvoice.task || 
+                   apiInvoice.taskName ||
+                   apiInvoice.project_name ||
+                   apiInvoice.project ||
+                   '';
+  
+  // Map outstanding amount - try multiple possible field names
+  const outstandingAmount = apiInvoice.outstanding_amount || 
+                           apiInvoice.outstanding || 
+                           apiInvoice.amount_due || 
+                           0;
+  
+  // Use outstanding_amount as invoice_amount for display (as requested)
+  const invoiceAmount = outstandingAmount || apiInvoice.invoice_amount || 0;
+  
+  return {
+    invoice_id: apiInvoice.invoice_id || apiInvoice.id || '',
+    invoice_number: apiInvoice.invoice_number || apiInvoice.invoice_no || '',
+    invoice_date: apiInvoice.invoice_date || apiInvoice.date || '',
+    client_id: String(apiInvoice.client_id || apiInvoice.client_id || ''),
+    client_name: apiInvoice.client_name || apiInvoice.client || apiInvoice.customer || '',
+    task_name: taskName,
+    service_category: apiInvoice.service_category || apiInvoice.category || '',
+    amount_before_tax: apiInvoice.amount_before_tax || apiInvoice.before_tax || 0,
+    total_gst: apiInvoice.total_gst || apiInvoice.gst || 0,
+    invoice_amount: invoiceAmount,
+    paid_amount: apiInvoice.paid_amount || apiInvoice.paid || 0,
+    outstanding_amount: outstandingAmount,
+    amount_due: apiInvoice.amount_due || apiInvoice.due || 0,
+    status: apiInvoice.status || 'unpaid',
+    due_date: apiInvoice.due_date || apiInvoice.due || '',
+    created_at: apiInvoice.created_at || apiInvoice.created_date
+  };
+};
+
+// Fetch Invoice Report
+export const fetchInvoiceReport = async (params?: {
+  client_id?: string;
+  service_category_id?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+}): Promise<{
+  invoices: InvoiceReportItem[];
+  summary: InvoiceReportResponse['data']['summary'];
+}> => {
+  try {
+    const response = await api.get<InvoiceReportResponse>('/api/reports/invoices', {
+      params: params || {}
+    });
+    
+    const data = response.data;
+    
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to fetch invoice report');
+    }
+    
+    // Fetch invoices from regular endpoint to get task names (they include taskname field)
+    let invoiceTaskMap: Map<string, string> = new Map();
+    try {
+      const invoicesResponse = await api.get('/api/invoices');
+      
+      if (invoicesResponse.data?.success && invoicesResponse.data?.data?.invoices) {
+        const invoices = invoicesResponse.data.data.invoices;
+        invoices.forEach((invoice: any) => {
+          // Map invoice_number to taskname
+          if (invoice.invoice_number && invoice.taskname) {
+            invoiceTaskMap.set(invoice.invoice_number, invoice.taskname);
+          }
+        });
+      }
+    } catch (invoiceError) {
+      console.warn('Could not fetch invoices for task names:', invoiceError);
+      // Continue without task names if invoice fetch fails
+    }
+    
+    // Also try fetching tasks to get task names
+    let taskMap: Map<string, string> = new Map();
+    try {
+      const tasksResponse = await api.get('/api/tasks', {
+        params: { is_active: true }
+      });
+      
+      if (tasksResponse.data?.success && tasksResponse.data?.data?.tasks) {
+        const tasks = tasksResponse.data.data.tasks;
+        tasks.forEach((task: any) => {
+          // Map invoice_id to task_name
+          if (task.invoice_id) {
+            const invoiceId = String(task.invoice_id).replace('invoice_', '');
+            const taskName = task.task_name || task.name || task.project_name || '';
+            if (taskName) {
+              taskMap.set(invoiceId, taskName);
+            }
+          }
+        });
+      }
+    } catch (taskError) {
+      console.warn('Could not fetch tasks for invoice reports:', taskError);
+      // Continue without task names if task fetch fails
+    }
+    
+    // Map API invoices to InvoiceReportItem format
+    const mappedInvoices = data.data.invoices.map((invoice: any) => {
+      const mappedInvoice = mapApiInvoiceReportToInvoiceReport(invoice);
+      
+      // Try to get task name from invoice map first (by invoice_number) - most reliable
+      if (!mappedInvoice.task_name && invoice.invoice_number) {
+        const taskName = invoiceTaskMap.get(invoice.invoice_number);
+        if (taskName) {
+          mappedInvoice.task_name = taskName;
+        }
+      }
+      
+      // If still no task name, try from task map (by invoice_id) - fallback
+      if (!mappedInvoice.task_name) {
+        const invoiceId = String(invoice.invoice_id || '').replace('invoice_', '');
+        const taskName = taskMap.get(invoiceId);
+        if (taskName) {
+          mappedInvoice.task_name = taskName;
+        }
+      }
+      
+      return mappedInvoice;
+    });
+    
+    return {
+      invoices: mappedInvoices,
+      summary: data.data.summary
+    };
+  } catch (error) {
+    console.error('Error fetching invoice report:', error);
+    throw error;
+  }
+};
+
+// Credit Note Report Interfaces
+export interface CreditNoteReportItem {
+  credit_note_id: string;
+  credit_note_number: string;
+  credit_note_date: string;
+  invoice_id: string;
+  invoice_number: string;
+  client_id: string;
+  client_name: string;
+  amount_before_tax: number;
+  total_gst: number;
+  credit_note_amount: number;
+  reason: string;
+  status: string;
+  created_at?: string;
+}
+
+export interface CreditNoteReportResponse {
+  success: boolean;
+  status: string;
+  message: string;
+  data: {
+    credit_notes: CreditNoteReportItem[];
+    summary: {
+      total_credit_notes: number;
+      total_amount: number;
+    };
+  };
+  error_code: string | null;
+  timestamp: string;
+  request_id: string;
+}
+
+// Debit Note Report Interfaces
+export interface DebitNoteReportItem {
+  debit_note_id: string;
+  debit_note_number: string;
+  client_id: string;
+  client_name: string;
+  description: string;
+  amount: number;
+  paid_amount: number;
+  outstanding_amount: number;
+  due_date: string;
+  status: string;
+  comments: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface DebitNoteReportResponse {
+  success: boolean;
+  status: string;
+  message: string;
+  data: {
+    debit_notes: DebitNoteReportItem[];
+    summary: {
+      total_debit_notes: number;
+      total_amount: number;
+      paid_amount: number;
+      outstanding_amount: number;
+    };
+  };
+  error_code: string | null;
+  timestamp: string;
+  request_id: string;
+}
+
+// Helper function to map API credit note report to CreditNoteReportItem
+const mapApiCreditNoteReportToCreditNoteReport = (apiCreditNote: any): CreditNoteReportItem => {
+  // Map amount before tax - try multiple possible field names
+  const amountBeforeTax = apiCreditNote.amount_before_tax || 
+                         apiCreditNote.amount_before_tax_amount ||
+                         apiCreditNote.before_tax || 
+                         0;
+  
+  // Map credit note amount - try multiple possible field names
+  let creditNoteAmount = apiCreditNote.credit_note_amount || 
+                        apiCreditNote.total_amount ||
+                        apiCreditNote.amount || 
+                        apiCreditNote.credit_note_total ||
+                        0;
+  
+  // Map total GST - try multiple possible field names
+  let totalGst = apiCreditNote.total_gst || 
+                apiCreditNote.total_gst_amount ||
+                apiCreditNote.gst || 
+                apiCreditNote.tax ||
+                0;
+  
+  // If GST is missing or zero, try to calculate it from amounts
+  if ((!totalGst || totalGst === 0) && creditNoteAmount && amountBeforeTax) {
+    totalGst = creditNoteAmount - amountBeforeTax;
+    // Only use calculated GST if it's positive (amount should be >= before tax)
+    if (totalGst < 0) {
+      totalGst = 0;
+    }
+  }
+  
+  // Ensure credit note amount is at least amount before tax + GST
+  if (creditNoteAmount && amountBeforeTax && totalGst && creditNoteAmount < (amountBeforeTax + totalGst)) {
+    creditNoteAmount = amountBeforeTax + totalGst;
+  }
+  
+  // Map credit note date - try multiple possible field names
+  const creditNoteDate = apiCreditNote.credit_note_date || 
+                        apiCreditNote.date || 
+                        apiCreditNote.cn_date ||
+                        apiCreditNote.created_at || 
+                        apiCreditNote.created_date || 
+                        '';
+  
+  return {
+    credit_note_id: apiCreditNote.credit_note_id || apiCreditNote.id || '',
+    credit_note_number: apiCreditNote.credit_note_number || apiCreditNote.credit_note_no || '',
+    credit_note_date: creditNoteDate,
+    invoice_id: apiCreditNote.invoice_id || apiCreditNote.invoice_id || '',
+    invoice_number: apiCreditNote.invoice_number || apiCreditNote.invoice_no || apiCreditNote.invoice_number || '',
+    client_id: String(apiCreditNote.client_id || apiCreditNote.client_id || ''),
+    client_name: apiCreditNote.client_name || apiCreditNote.client || apiCreditNote.customer || '',
+    amount_before_tax: amountBeforeTax,
+    total_gst: totalGst,
+    credit_note_amount: creditNoteAmount,
+    reason: apiCreditNote.reason || apiCreditNote.description || '',
+    status: apiCreditNote.status || 'active',
+    created_at: apiCreditNote.created_at || apiCreditNote.created_date
+  };
+};
+
+// Fetch Credit Note Report
+export const fetchCreditNoteReport = async (params?: {
+  client_id?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+}): Promise<{
+  credit_notes: CreditNoteReportItem[];
+  summary: CreditNoteReportResponse['data']['summary'];
+}> => {
+  try {
+    const response = await api.get<CreditNoteReportResponse>('/api/reports/credit-notes', {
+      params: params || {}
+    });
+    
+    const data = response.data;
+    
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to fetch credit note report');
+    }
+    
+    // Also fetch from regular credit notes endpoint to get complete data
+    let creditNoteDataMap: Map<string, any> = new Map();
+    try {
+      const creditNotesResponse = await api.get('/api/credit-notes');
+      
+      if (creditNotesResponse.data?.success && creditNotesResponse.data?.data?.credit_notes) {
+        const creditNotes = creditNotesResponse.data.data.credit_notes;
+        creditNotes.forEach((cn: any) => {
+          // Map by credit_note_number for matching
+          if (cn.credit_note_number) {
+            creditNoteDataMap.set(cn.credit_note_number, cn);
+          }
+        });
+      }
+    } catch (creditNoteError) {
+      console.warn('Could not fetch credit notes for additional data:', creditNoteError);
+      // Continue without additional data if fetch fails
+    }
+    
+    // Map API credit notes to CreditNoteReportItem format
+    const mappedCreditNotes = data.data.credit_notes.map((creditNote: any) => {
+      const mappedCreditNote = mapApiCreditNoteReportToCreditNoteReport(creditNote);
+      
+      // Try to get additional data from credit note map if available
+      if (creditNote.credit_note_number) {
+        const additionalData = creditNoteDataMap.get(creditNote.credit_note_number);
+        if (additionalData) {
+          // Update credit note date - prioritize the one from additional data if available
+          if (additionalData.credit_note_date) {
+            mappedCreditNote.credit_note_date = additionalData.credit_note_date;
+          } else if (additionalData.date && (!mappedCreditNote.credit_note_date || mappedCreditNote.credit_note_date === '')) {
+            mappedCreditNote.credit_note_date = additionalData.date;
+          }
+          // Update amounts if they're missing or zero
+          if ((!mappedCreditNote.amount_before_tax || mappedCreditNote.amount_before_tax === 0) && additionalData.amount_before_tax) {
+            mappedCreditNote.amount_before_tax = additionalData.amount_before_tax;
+          }
+          if ((!mappedCreditNote.credit_note_amount || mappedCreditNote.credit_note_amount === 0) && additionalData.total_amount) {
+            mappedCreditNote.credit_note_amount = additionalData.total_amount;
+          }
+          if ((!mappedCreditNote.credit_note_amount || mappedCreditNote.credit_note_amount === 0) && additionalData.credit_note_amount) {
+            mappedCreditNote.credit_note_amount = additionalData.credit_note_amount;
+          }
+          // Update GST if missing
+          if ((!mappedCreditNote.total_gst || mappedCreditNote.total_gst === 0) && additionalData.total_gst) {
+            mappedCreditNote.total_gst = additionalData.total_gst;
+          }
+        }
+      }
+      
+      return mappedCreditNote;
+    });
+    
+    return {
+      credit_notes: mappedCreditNotes,
+      summary: data.data.summary
+    };
+  } catch (error) {
+    console.error('Error fetching credit note report:', error);
+    throw error;
+  }
+};
+
+// Helper function to map API debit note report to DebitNoteReportItem
+const mapApiDebitNoteReportToDebitNoteReport = (apiDebitNote: any): DebitNoteReportItem => {
+  // Map created date - try multiple possible field names
+  const createdDate = apiDebitNote.created_at || 
+                     apiDebitNote.created_date || 
+                     apiDebitNote.created ||
+                     apiDebitNote.date_created ||
+                     '';
+  
+  return {
+    debit_note_id: apiDebitNote.debit_note_id || apiDebitNote.id || '',
+    debit_note_number: apiDebitNote.debit_note_number || apiDebitNote.debit_note_no || '',
+    client_id: String(apiDebitNote.client_id || apiDebitNote.client_id || ''),
+    client_name: apiDebitNote.client_name || apiDebitNote.client || apiDebitNote.customer || '',
+    description: apiDebitNote.description || apiDebitNote.desc || '',
+    amount: apiDebitNote.amount || apiDebitNote.total_amount || 0,
+    paid_amount: apiDebitNote.paid_amount || apiDebitNote.paid || 0,
+    outstanding_amount: apiDebitNote.outstanding_amount || apiDebitNote.outstanding || 0,
+    due_date: apiDebitNote.due_date || apiDebitNote.due || '',
+    status: apiDebitNote.status || 'unpaid',
+    comments: apiDebitNote.comments || apiDebitNote.comment || '',
+    created_at: createdDate,
+    updated_at: apiDebitNote.updated_at || apiDebitNote.updated_date
+  };
+};
+
+// Fetch Debit Note Report
+export const fetchDebitNoteReport = async (params?: {
+  client_id?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+}): Promise<{
+  debit_notes: DebitNoteReportItem[];
+  summary: DebitNoteReportResponse['data']['summary'];
+}> => {
+  try {
+    const response = await api.get<DebitNoteReportResponse>('/api/reports/debit-notes', {
+      params: params || {}
+    });
+    
+    const data = response.data;
+    
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to fetch debit note report');
+    }
+    
+    // Also fetch from regular debit notes endpoint to get complete data
+    let debitNoteDataMap: Map<string, any> = new Map();
+    try {
+      const debitNotesResponse = await api.get('/api/debit-notes');
+      
+      if (debitNotesResponse.data?.success && debitNotesResponse.data?.data?.debit_notes) {
+        const debitNotes = debitNotesResponse.data.data.debit_notes;
+        debitNotes.forEach((dn: any) => {
+          // Map by debit_note_number for matching
+          if (dn.debit_note_number) {
+            debitNoteDataMap.set(dn.debit_note_number, dn);
+          }
+        });
+      }
+    } catch (debitNoteError) {
+      console.warn('Could not fetch debit notes for additional data:', debitNoteError);
+      // Continue without additional data if fetch fails
+    }
+    
+    // Map API debit notes to DebitNoteReportItem format
+    const mappedDebitNotes = data.data.debit_notes.map((debitNote: any) => {
+      const mappedDebitNote = mapApiDebitNoteReportToDebitNoteReport(debitNote);
+      
+      // Try to get additional data from debit note map if available
+      if (debitNote.debit_note_number) {
+        const additionalData = debitNoteDataMap.get(debitNote.debit_note_number);
+        if (additionalData) {
+          // Update created date - prioritize the one from additional data if available
+          if (additionalData.created_at) {
+            mappedDebitNote.created_at = additionalData.created_at;
+          } else if (additionalData.created_date && (!mappedDebitNote.created_at || mappedDebitNote.created_at === '')) {
+            mappedDebitNote.created_at = additionalData.created_date;
+          }
+          // Update amounts if they're missing or zero
+          if ((!mappedDebitNote.amount || mappedDebitNote.amount === 0) && additionalData.amount) {
+            mappedDebitNote.amount = additionalData.amount;
+          }
+          if ((!mappedDebitNote.paid_amount || mappedDebitNote.paid_amount === 0) && additionalData.paid_amount) {
+            mappedDebitNote.paid_amount = additionalData.paid_amount;
+          }
+          if ((!mappedDebitNote.outstanding_amount || mappedDebitNote.outstanding_amount === 0) && additionalData.outstanding_amount) {
+            mappedDebitNote.outstanding_amount = additionalData.outstanding_amount;
+          }
+        }
+      }
+      
+      return mappedDebitNote;
+    });
+    
+    return {
+      debit_notes: mappedDebitNotes,
+      summary: data.data.summary
+    };
+  } catch (error) {
+    console.error('Error fetching debit note report:', error);
+    throw error;
+  }
+};
+
+// Export report to file
 export const exportReport = async (
-  reportType: 'tasks' | 'invoice-register' | 'aging' | 'revenue-by-client' | 'client-statement',
+  reportType: 'tasks' | 'invoice-register' | 'aging' | 'revenue-by-client' | 'client-statement' | 'invoices' | 'credit-notes' | 'debit-notes',
   format: 'xlsx' | 'csv',
-  filters?: any,
+  params?: Record<string, any>,
   clientId?: string
 ): Promise<Blob> => {
   try {
-    let url = `/api/reports/${reportType}`;
+    let endpoint = '';
     
-    if (reportType === 'client-statement' && clientId) {
-      url = `/api/reports/client-statement/${clientId}`;
-    }
-    
-    const params = new URLSearchParams();
-    params.append('format', format);
-    
-    if (filters) {
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value && value !== 'all') {
-          params.append(key, String(value));
+    switch (reportType) {
+      case 'tasks':
+        endpoint = '/api/reports/tasks';
+        break;
+      case 'invoice-register':
+        endpoint = '/api/reports/invoice-register';
+        break;
+      case 'aging':
+        endpoint = '/api/reports/aging';
+        break;
+      case 'revenue-by-client':
+        endpoint = '/api/reports/revenue-by-client';
+        break;
+      case 'client-statement':
+        if (!clientId) {
+          throw new Error('Client ID is required for client statement export');
         }
-      });
+        endpoint = `/api/reports/client-statement/${clientId}`;
+        break;
+      case 'invoices':
+        endpoint = '/api/reports/invoices';
+        break;
+      case 'credit-notes':
+        endpoint = '/api/reports/credit-notes';
+        break;
+      case 'debit-notes':
+        endpoint = '/api/reports/debit-notes';
+        break;
     }
-
-    const response = await api.get(`${url}?${params.toString()}`, {
-      responseType: 'blob',
+    
+    const response = await api.get(endpoint, {
+      params: {
+        ...params,
+        export: true,
+        format: format
+      },
+      responseType: 'blob'
     });
     
     return response.data;
@@ -464,4 +998,3 @@ export const exportReport = async (
     throw error;
   }
 };
-

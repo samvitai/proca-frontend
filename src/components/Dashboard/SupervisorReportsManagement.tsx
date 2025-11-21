@@ -5,27 +5,25 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, BarChart3, Loader2 } from "lucide-react";
+import { Search, Download, Calendar, BarChart3, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { fetchTaskReport, exportReport, type ReportTask, type ReportFilters } from "@/services/reportService";
+import { fetchTaskReport, TaskReport } from "@/services/reportService";
 import { api } from "@/lib/utils";
+import { exportTasks } from "@/lib/exportUtils";
 
 interface Client {
-  client_id: string;
-  client_name: string;
-  client_code: string;
-}
-
-interface User {
   id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
+  name: string;
 }
 
 interface ServiceCategory {
-  service_category_id: string;
-  service_category_name: string;
+  id: string;
+  name: string;
+}
+
+interface Assignee {
+  id: string;
+  name: string;
 }
 
 const SupervisorReportsManagement = () => {
@@ -39,14 +37,9 @@ const SupervisorReportsManagement = () => {
   const [dueDateFrom, setDueDateFrom] = useState<string>("");
   const [dueDateTo, setDueDateTo] = useState<string>("");
   const [exportFormat, setExportFormat] = useState<string>("csv");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-
-  // Data states
-  const [tasks, setTasks] = useState<ReportTask[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [assignees, setAssignees] = useState<User[]>([]);
-  const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>([]);
+  const [tasks, setTasks] = useState<TaskReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     assigned: 0,
@@ -54,141 +47,220 @@ const SupervisorReportsManagement = () => {
     overdue: 0
   });
 
+  // Filter options
+  const [clients, setClients] = useState<Client[]>([]);
+  const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>([]);
+  const [assignees, setAssignees] = useState<Assignee[]>([]);
+
   // Fetch filter options
   useEffect(() => {
     const fetchFilterOptions = async () => {
       try {
         // Fetch clients
-        const clientsRes = await api.get("/api/clients/?is_active=true");
-        const clientsData = clientsRes.data?.data?.clients || [];
-        setClients(clientsData);
-
-        // Fetch users (for assignees)
-        const usersRes = await api.get("/api/v1/users/organization/users?role=USERS");
-        const usersData = usersRes.data || {};
-        const allUsers = [
-          ...(usersData.admin || []),
-          ...(usersData.supervisor || []),
-          ...(usersData.employee || []),
-        ].filter((user: User) => user.is_active);
-        setAssignees(allUsers);
+        const clientsResponse = await api.get('/api/clients/?is_active=true');
+        const clientsData = clientsResponse.data?.data?.clients || clientsResponse.data?.data || [];
+        if (Array.isArray(clientsData) && clientsData.length > 0) {
+          setClients(clientsData.map((c: any) => ({
+            id: String(c.client_id || c.id || ''),
+            name: c.client_name || c.company_name || c.name || 'Unknown Client'
+          })));
+        }
 
         // Fetch service categories
-        const categoriesRes = await api.get("/api/master/service-categories?is_active=true");
-        const categoriesData = categoriesRes.data?.data?.service_categories || [];
-        setServiceCategories(categoriesData);
-      } catch (error) {
+        const categoriesResponse = await api.get('/api/master/service-categories?is_active=true');
+        const categoriesData = categoriesResponse.data?.data?.service_categories 
+          || categoriesResponse.data?.data 
+          || (Array.isArray(categoriesResponse.data?.data) ? categoriesResponse.data.data : []);
+        if (Array.isArray(categoriesData) && categoriesData.length > 0) {
+          setServiceCategories(categoriesData.map((c: any) => ({
+            id: String(c.service_category_id || c.category_id || c.id || ''),
+            name: c.name || c.category_name || 'Unknown Category'
+          })));
+        }
+
+        // Fetch assignees (employees and supervisors)
+        const usersResponse = await api.get('/api/v1/users/organization/users?role=USERS');
+        const usersData = usersResponse.data || {};
+        const allUsers = [
+          ...(usersData.employee || []),
+          ...(usersData.supervisor || []),
+          ...(usersData.admin || [])
+        ].filter((user: any) => user.is_active !== false);
+        
+        if (allUsers.length > 0) {
+          setAssignees(allUsers.map((u: any) => ({
+            id: String(u.user_id || u.id || ''),
+            name: `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email || 'Unknown User'
+          })));
+        }
+      } catch (error: any) {
         console.error('Error fetching filter options:', error);
+        toast({
+          title: "Warning",
+          description: "Some filter options may not be available. " + (error.response?.data?.message || error.message || ""),
+          variant: "default",
+        });
       }
     };
 
     fetchFilterOptions();
   }, []);
 
-  // Fetch report data
+  // Helper function to extract numeric ID from string IDs like "client_220"
+  const extractNumericId = (id: string): number | string => {
+    if (!id || id === "all") return id;
+    
+    // If it's already a number, return as is
+    if (/^\d+$/.test(id)) {
+      return parseInt(id, 10);
+    }
+    
+    // If it contains "client_", extract the numeric part
+    if (id.startsWith('client_')) {
+      const numericPart = id.replace('client_', '');
+      const parsed = parseInt(numericPart, 10);
+      return isNaN(parsed) ? id : parsed;
+    }
+    
+    // If it contains other prefixes, try to extract numeric part
+    const match = id.match(/(\d+)$/);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      return isNaN(parsed) ? id : parsed;
+    }
+    
+    // Fallback: return as is
+    return id;
+  };
+
+  // Fetch tasks report
   useEffect(() => {
     const loadTaskReport = async () => {
-      setIsLoading(true);
+      setLoading(true);
       try {
-        const filters: ReportFilters = {
-          assignmentStatus: assignmentStatusFilter as any,
-          workflowStatus: workflowStatusFilter as any,
-          workflowStatusGroup: workflowStatusGroupFilter as any,
-          assigneeId: assigneeFilter !== 'all' ? assigneeFilter : undefined,
-          clientId: clientFilter !== 'all' ? clientFilter : undefined,
-          serviceCategoryId: serviceCategoryFilter !== 'all' ? serviceCategoryFilter : undefined,
-          dueDateFrom: dueDateFrom || undefined,
-          dueDateTo: dueDateTo || undefined,
-          search: searchTerm || undefined,
-        };
-
-        const response = await fetchTaskReport(filters);
-        const taskList: ReportTask[] = Array.isArray(response.data) ? response.data : [];
-        setTasks(taskList);
+        const params: any = {};
         
-        // Calculate stats
-        setStats({
-          total: taskList.length,
-          assigned: taskList.filter(t => t.assignmentStatus === 'assigned').length,
-          completed: taskList.filter(t => t.workflowStatusGroup === 'completed').length,
-          overdue: taskList.filter(t => {
-            const dueDate = new Date(t.dueDate);
-            const now = new Date();
-            return dueDate < now && t.workflowStatusGroup === 'pending';
+        if (assignmentStatusFilter !== "all") {
+          params.assignment_status = assignmentStatusFilter;
+        }
+        if (workflowStatusFilter !== "all") {
+          params.workflow_status = workflowStatusFilter;
+        }
+        if (workflowStatusGroupFilter !== "all") {
+          params.status_group = workflowStatusGroupFilter;
+        }
+        if (assigneeFilter !== "all") {
+          params.assignee_id = extractNumericId(assigneeFilter);
+        }
+        if (clientFilter !== "all") {
+          params.client_id = extractNumericId(clientFilter);
+        }
+        if (serviceCategoryFilter !== "all") {
+          params.service_category_id = extractNumericId(serviceCategoryFilter);
+        }
+        if (dueDateFrom) {
+          params.due_date_from = dueDateFrom;
+        }
+        if (dueDateTo) {
+          params.due_date_to = dueDateTo;
+        }
+        if (searchTerm) {
+          params.search = searchTerm;
+        }
+
+        const result = await fetchTaskReport(params);
+        setTasks(result.tasks);
+        
+        // Calculate stats from tasks if summary is not available or incomplete
+        const calculatedStats = {
+          total: result.tasks.length,
+          assigned: result.tasks.filter(t => t.assignment_status === 'assigned').length,
+          completed: result.tasks.filter(t => t.status_group === 'completed').length,
+          overdue: result.tasks.filter(t => {
+            if (t.status_group !== 'pending' || !t.due_date) return false;
+            const dueDate = new Date(t.due_date);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            dueDate.setHours(0, 0, 0, 0);
+            return dueDate < today;
           }).length
+        };
+        
+        // Use API summary if available, otherwise use calculated stats
+        setStats({
+          total: result.summary?.total_projects ?? calculatedStats.total,
+          assigned: result.summary?.assigned ?? calculatedStats.assigned,
+          completed: result.summary?.completed ?? calculatedStats.completed,
+          overdue: result.summary?.overdue ?? calculatedStats.overdue
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error loading task report:', error);
         toast({
           title: "Error",
-          description: "Failed to load report data. Please try again.",
+          description: error.response?.data?.message || error.message || "Failed to load task report",
           variant: "destructive",
         });
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
 
     loadTaskReport();
-  }, [assignmentStatusFilter, workflowStatusFilter, workflowStatusGroupFilter, 
-      assigneeFilter, clientFilter, serviceCategoryFilter, dueDateFrom, dueDateTo, searchTerm]);
+  }, [
+    assignmentStatusFilter,
+    workflowStatusFilter,
+    workflowStatusGroupFilter,
+    assigneeFilter,
+    clientFilter,
+    serviceCategoryFilter,
+    dueDateFrom,
+    dueDateTo,
+    searchTerm
+  ]);
 
-  // Filter tasks based on search (client-side filtering for search term)
   const filteredTasks = tasks.filter(task => {
-    if (!searchTerm) return true;
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      task.name.toLowerCase().includes(searchLower) ||
-      task.client.toLowerCase().includes(searchLower) ||
-      (task.description && task.description.toLowerCase().includes(searchLower))
-    );
+    const matchesSearch = !searchTerm || 
+      task.project_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      task.client.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return matchesSearch;
   });
 
-  const handleExport = async () => {
-    setIsExporting(true);
+  const handleExport = () => {
+    setExporting(true);
     try {
-      const filters: any = {
-        assignmentStatus: assignmentStatusFilter,
-        workflowStatus: workflowStatusFilter,
-        workflowStatusGroup: workflowStatusGroupFilter,
-        assigneeId: assigneeFilter !== 'all' ? assigneeFilter : undefined,
-        clientId: clientFilter !== 'all' ? clientFilter : undefined,
-        serviceCategoryId: serviceCategoryFilter !== 'all' ? serviceCategoryFilter : undefined,
-        dueDateFrom: dueDateFrom || undefined,
-        dueDateTo: dueDateTo || undefined,
-        search: searchTerm || undefined,
-      };
+      // Export only the filtered tasks that are currently displayed in the table
+      // filteredTasks already includes all applied filters (from API) + search term filter
+      if (filteredTasks.length === 0) {
+        toast({
+          title: "No Data to Export",
+          description: "There are no tasks to export with the current filters.",
+          variant: "default",
+        });
+        setExporting(false);
+        return;
+      }
 
-      const blob = await exportReport('tasks', exportFormat as 'xlsx' | 'csv', filters);
-      
-      // Download the file
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `task-report.${exportFormat}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      exportTasks(filteredTasks, exportFormat as 'csv' | 'xlsx', 'task-report');
 
       toast({
         title: "Export Successful",
-        description: `Report exported as ${exportFormat.toUpperCase()}`,
+        description: `Exported ${filteredTasks.length} tasks as ${exportFormat.toUpperCase()}`,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error exporting report:', error);
-    toast({
+      toast({
         title: "Export Failed",
-        description: "Failed to export report. Please try again.",
+        description: error.message || "Failed to export report",
         variant: "destructive",
-    });
+      });
     } finally {
-      setIsExporting(false);
+      setExporting(false);
     }
   };
 
-  const getWorkflowStatusBadge = (status: ReportTask['workflowStatus']) => {
-    const colors = {
+  const getWorkflowStatusBadge = (status: TaskReport['workflow_status']) => {
+    const colors: Record<string, string> = {
       'open': 'bg-gray-500',
       'in_progress': 'bg-blue-500',
       'in_review': 'bg-yellow-500',
@@ -196,13 +268,13 @@ const SupervisorReportsManagement = () => {
     };
 
     return (
-      <Badge className={colors[status]}>
+      <Badge className={colors[status] || 'bg-gray-500'}>
         {status.replace('_', ' ')}
       </Badge>
     );
   };
 
-  const getAssignmentStatusBadge = (status: ReportTask['assignmentStatus']) => {
+  const getAssignmentStatusBadge = (status: TaskReport['assignment_status']) => {
     return (
       <Badge variant={status === 'assigned' ? 'default' : 'secondary'}>
         {status.replace('_', ' ')}
@@ -210,7 +282,7 @@ const SupervisorReportsManagement = () => {
     );
   };
 
-  const getWorkflowStatusGroupBadge = (group: ReportTask['workflowStatusGroup']) => {
+  const getWorkflowStatusGroupBadge = (group: TaskReport['status_group']) => {
     return (
       <Badge variant={group === 'completed' ? 'default' : 'secondary'} 
              className={group === 'completed' ? 'bg-green-500' : 'bg-orange-500'}>
@@ -232,7 +304,7 @@ const SupervisorReportsManagement = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Projects</p>
-                <p className="text-2xl font-bold text-ca-primary">{stats.total}</p>
+                <p className="text-2xl font-bold text-ca-primary">{stats.total ?? 0}</p>
               </div>
             </div>
           </CardContent>
@@ -246,7 +318,7 @@ const SupervisorReportsManagement = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Assigned</p>
-                <p className="text-2xl font-bold text-ca-primary">{stats.assigned}</p>
+                <p className="text-2xl font-bold text-ca-primary">{stats.assigned ?? 0}</p>
               </div>
             </div>
           </CardContent>
@@ -260,7 +332,7 @@ const SupervisorReportsManagement = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Completed</p>
-                <p className="text-2xl font-bold text-ca-primary">{stats.completed}</p>
+                <p className="text-2xl font-bold text-ca-primary">{stats.completed ?? 0}</p>
               </div>
             </div>
           </CardContent>
@@ -274,7 +346,7 @@ const SupervisorReportsManagement = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Overdue</p>
-                <p className="text-2xl font-bold text-ca-primary">{stats.overdue}</p>
+                <p className="text-2xl font-bold text-ca-primary">{stats.overdue ?? 0}</p>
               </div>
             </div>
           </CardContent>
@@ -295,8 +367,8 @@ const SupervisorReportsManagement = () => {
                   <SelectItem value="csv">CSV</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={handleExport} disabled={isExporting}>
-                {isExporting ? (
+              <Button onClick={handleExport} disabled={exporting}>
+                {exporting ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                 <Download className="h-4 w-4 mr-2" />
@@ -352,19 +424,17 @@ const SupervisorReportsManagement = () => {
               </SelectContent>
             </Select>
 
-                <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Assignee" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Assignees</SelectItem>
-                    {assignees.map(assignee => (
-                      <SelectItem key={assignee.id} value={assignee.id}>
-                        {assignee.first_name} {assignee.last_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Assignee" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Assignees</SelectItem>
+                {assignees.map(assignee => (
+                  <SelectItem key={assignee.id} value={assignee.id}>{assignee.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
@@ -375,9 +445,7 @@ const SupervisorReportsManagement = () => {
               <SelectContent>
                 <SelectItem value="all">All Clients</SelectItem>
                 {clients.map(client => (
-                  <SelectItem key={client.client_id} value={client.client_id}>
-                    {client.client_name}
-                  </SelectItem>
+                  <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -389,9 +457,7 @@ const SupervisorReportsManagement = () => {
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
                 {serviceCategories.map(category => (
-                  <SelectItem key={category.service_category_id} value={category.service_category_id}>
-                    {category.service_category_name}
-                  </SelectItem>
+                  <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -413,49 +479,49 @@ const SupervisorReportsManagement = () => {
         </CardHeader>
         
         <CardContent>
-          {isLoading ? (
-            <div className="flex justify-center items-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-ca-primary" />
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project Name</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Service Category</TableHead>
-                  <TableHead>Assignment Status</TableHead>
-                  <TableHead>Workflow Status</TableHead>
-                  <TableHead>Status Group</TableHead>
-                  <TableHead>Assignee</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Created Date</TableHead>
+            <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Project Name</TableHead>
+                <TableHead>Client</TableHead>
+                <TableHead>Service Category</TableHead>
+                <TableHead>Assignment Status</TableHead>
+                <TableHead>Workflow Status</TableHead>
+                <TableHead>Status Group</TableHead>
+                <TableHead>Assignee</TableHead>
+                <TableHead>Due Date</TableHead>
+                <TableHead>Created Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTasks.map((task) => (
+                <TableRow key={task.id}>
+                      <TableCell className="font-medium">{task.project_name}</TableCell>
+                  <TableCell>{task.client}</TableCell>
+                      <TableCell>{task.service_category}</TableCell>
+                      <TableCell>{getAssignmentStatusBadge(task.assignment_status)}</TableCell>
+                      <TableCell>{getWorkflowStatusBadge(task.workflow_status)}</TableCell>
+                      <TableCell>{getWorkflowStatusGroupBadge(task.status_group)}</TableCell>
+                      <TableCell>{task.assignee_name || 'Unassigned'}</TableCell>
+                      <TableCell>{task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}</TableCell>
+                      <TableCell>{task.created_date ? new Date(task.created_date).toLocaleDateString() : '-'}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTasks.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                      No projects found matching the current filters.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredTasks.map((task) => (
-                    <TableRow key={task.id}>
-                      <TableCell className="font-medium">{task.name}</TableCell>
-                      <TableCell>{task.client}</TableCell>
-                      <TableCell>{task.serviceCategory}</TableCell>
-                      <TableCell>{getAssignmentStatusBadge(task.assignmentStatus)}</TableCell>
-                      <TableCell>{getWorkflowStatusBadge(task.workflowStatus)}</TableCell>
-                      <TableCell>{getWorkflowStatusGroupBadge(task.workflowStatusGroup)}</TableCell>
-                      <TableCell>{task.assigneeName || 'Unassigned'}</TableCell>
-                      <TableCell>{task.dueDate}</TableCell>
-                      <TableCell>{task.createdAt}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+              ))}
+            </TableBody>
+          </Table>
+
+              {filteredTasks.length === 0 && !loading && (
+            <div className="text-center py-8 text-muted-foreground">
+              No projects found matching the current filters.
+            </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
