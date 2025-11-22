@@ -57,10 +57,12 @@ const Sidebar = ({ role, email }: SidebarProps) => {
     ],
     supervisor: [
       { icon: CheckSquare, label: 'Projects', path: '/dashboard/supervisor/tasks' },
+      { icon: FileMinus, label: 'Debit Notes', path: '/dashboard/supervisor/debit-notes' },
       { icon: BarChart3, label: 'Reports', path: '/dashboard/supervisor/reports' }
     ],
     employee: [
       { icon: CheckSquare, label: 'Projects', path: '/dashboard/employee/tasks' },
+      { icon: FileMinus, label: 'Debit Notes', path: '/dashboard/employee/debit-notes' },
       { icon: BarChart3, label: 'Reports', path: '/dashboard/employee/reports' }
     ],
     client: [

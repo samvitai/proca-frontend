@@ -30,7 +30,9 @@ import ClientTasks from "./pages/dashboard/ClientTasks";
 import ClientInvoices from "./pages/dashboard/ClientInvoices";
 import ClientDebitNotes from "./pages/dashboard/ClientDebitNotes";
 import SupervisorReports from "./pages/dashboard/SupervisorReports";
+import SupervisorDebitNotes from "./pages/dashboard/SupervisorDebitNotes";
 import EmployeeReports from "./pages/dashboard/EmployeeReports";
+import EmployeeDebitNotes from "./pages/dashboard/EmployeeDebitNotes";
 import SupervisorDashboard from "./pages/dashboard/SupervisorDashboard";
 import EmployeeDashboard from "./pages/dashboard/EmployeeDashboard";
 import Profile from "./pages/dashboard/Profile";
@@ -71,12 +73,14 @@ const App = () => (
           {/* Supervisor Routes */}
           <Route path="/dashboard/supervisor" element={<SupervisorDashboard />} />
           <Route path="/dashboard/supervisor/tasks" element={<SupervisorTasks />} />
+          <Route path="/dashboard/supervisor/debit-notes" element={<SupervisorDebitNotes />} />
           <Route path="/dashboard/supervisor/reports" element={<SupervisorReports />} />
           <Route path="/dashboard/supervisor/profile" element={<Profile />} />
           
           {/* Employee Routes */}
           <Route path="/dashboard/employee" element={<EmployeeDashboard />} />
           <Route path="/dashboard/employee/tasks" element={<EmployeeTasks />} />
+          <Route path="/dashboard/employee/debit-notes" element={<EmployeeDebitNotes />} />
           <Route path="/dashboard/employee/reports" element={<EmployeeReports />} />
           <Route path="/dashboard/employee/profile" element={<Profile />} />
           
